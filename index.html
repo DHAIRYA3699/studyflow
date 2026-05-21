@@ -36,8 +36,7 @@
       <button data-page="calendar"><span class="nav-left"><span class="nav-icon">📅</span><span>Calendar</span></span></button>
       <button data-page="focus"><span class="nav-left"><span class="nav-icon">⏱</span><span>Pomodoro</span></span><span class="nav-badge">FOCUS</span></button>
       <button data-page="settings"><span class="nav-left"><span class="nav-icon">⚙</span><span>Settings</span></span></button>
-      <div class="nav-group">AI</div>
-      <button data-page="ai" style="background:linear-gradient(135deg,rgba(124,58,237,.18),rgba(37,99,235,.12));border:1px solid rgba(124,58,237,.25)"><span class="nav-left"><span class="nav-icon">✦</span><span>AI Assistant</span></span><span class="nav-badge" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff">NEW</span></button>
+
     </div>
     <div class="sidebar-footer">
       <div class="progress-row"><span>Semester Progress</span><span id="semesterProgressLabel">0%</span></div>
@@ -293,73 +292,52 @@
 </div>
     </section>
 
-    <!-- AI ASSISTANT PAGE -->
-    <section class="page hidden" id="aiPage">
-      <div class="ai-layout">
-        <!-- Left: Mode selector -->
-        <div class="ai-sidebar-panel">
-          <div class="ai-mode-card active" data-mode="tutor" onclick="setAiMode('tutor',this)">
-            <div class="ai-mode-icon">🎓</div>
-            <div class="ai-mode-title">Study Tutor</div>
-            <div class="ai-mode-desc">Explain concepts, answer questions, and teach any subject</div>
-          </div>
-          <div class="ai-mode-card" data-mode="planner" onclick="setAiMode('planner',this)">
-            <div class="ai-mode-icon">📅</div>
-            <div class="ai-mode-title">Study Planner</div>
-            <div class="ai-mode-desc">Get a personalized study schedule based on your tasks & exams</div>
-          </div>
-          <div class="ai-mode-card" data-mode="quiz" onclick="setAiMode('quiz',this)">
-            <div class="ai-mode-icon">❓</div>
-            <div class="ai-mode-title">Quiz Me</div>
-            <div class="ai-mode-desc">Generate questions on any topic to test your knowledge</div>
-          </div>
-          <div class="ai-mode-card" data-mode="essay" onclick="setAiMode('essay',this)">
-            <div class="ai-mode-icon">✍️</div>
-            <div class="ai-mode-title">Essay Helper</div>
-            <div class="ai-mode-desc">Brainstorm, outline, and improve your writing</div>
-          </div>
-          <div class="ai-mode-card" data-mode="flashgen" onclick="setAiMode('flashgen',this)">
-            <div class="ai-mode-icon">⚡</div>
-            <div class="ai-mode-title">Flashcard Gen</div>
-            <div class="ai-mode-desc">Generate flashcard Q&A pairs from any topic or notes</div>
-          </div>
-          <div class="ai-mode-card" data-mode="coach" onclick="setAiMode('coach',this)">
-            <div class="ai-mode-icon">💪</div>
-            <div class="ai-mode-title">Motivation Coach</div>
-            <div class="ai-mode-desc">Beat procrastination and stay focused with personalized tips</div>
-          </div>
-          <button class="btn ghost" style="font-size:13px;padding:10px;border-radius:12px;" onclick="clearAiChat()">🗑 Clear Chat</button>
-        </div>
-
-        <!-- Right: Chat panel -->
-        <div class="ai-chat-panel">
-          <div class="ai-chat-header">
-            <div class="ai-chat-header-icon">✦</div>
-            <div class="ai-chat-header-info">
-              <strong id="aiModeLabel">Study Tutor</strong>
-              <span id="aiModeDesc">Powered by Claude AI</span>
-            </div>
-            <div class="ai-chat-status" id="aiStatusDot"></div>
-          </div>
-          <div class="ai-quick-prompts" id="aiQuickPrompts"></div>
-          <div class="ai-messages" id="aiMessages">
-            <div class="ai-welcome" id="aiWelcome">
-              <div class="ai-welcome-icon">✦</div>
-              <h3>AI Study Assistant</h3>
-              <p>Choose a mode on the left, then ask me anything! I can tutor you, build a study plan, quiz you, help with essays, and more.</p>
-            </div>
-          </div>
-          <div class="ai-input-bar">
-            <textarea id="aiInput" placeholder="Ask anything…" rows="1" onkeydown="aiInputKeydown(event)" oninput="autoResizeAiInput(this)"></textarea>
-            <button class="ai-send-btn" id="aiSendBtn" onclick="sendAiMessage()">➤</button>
-          </div>
-        </div>
-      </div>
     </section>
-
+     </div>
   </main>
 </div>
 <div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+
+<button class="floating-ai-btn" onclick="toggleAiPopup()">
+ ✦
+</button>
+
+<div id="aiPopup" class="simple-ai-popup">
+
+  <div class="simple-ai-header">
+    <span>✦ StudyFlow AI</span>
+    <button onclick="toggleAiPopup()" style="background:none;border:none;color:white;font-size:20px;cursor:pointer;line-height:1;">✕</button>
+  </div>
+
+  <div class="simple-ai-messages" id="popupMessages">
+    <div class="popup-welcome" id="popupWelcome">
+      <div style="font-size:28px;margin-bottom:8px;">✦</div>
+      <div style="font-weight:600;margin-bottom:4px;">AI Study Assistant</div>
+      <div style="font-size:12px;opacity:.7;">Ask me anything about your studies!</div>
+    </div>
+  </div>
+
+  <div class="simple-ai-input-row">
+    <textarea
+      id="popupAiInput"
+      class="simple-ai-textarea"
+      placeholder="Ask me anything..."
+      rows="1"
+      onkeydown="popupInputKeydown(event)"
+      oninput="autoResizePopupInput(this)"
+    ></textarea>
+    <button class="simple-ai-send-btn" id="popupSendBtn" onclick="sendPopupMessage()">➤</button>
+  </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
+
 <script src="script.js"></script>
 </body>
 </html>
