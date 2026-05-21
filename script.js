@@ -500,41 +500,61 @@ window.sendAiMessage = async function() {
   const mode = AI_MODES[aiMode];
   const systemPrompt = mode.system + (aiMode==='planner'?getStudentContext():'');
   try {
-    const API_KEY = 'AIzaSyCuAP6BMx2KO8-ULzaSWfmlNkakJp96n9c';
+    const API_KEY = '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';
 
 const resp = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
-    {
-    method: 'POST',
+  "https://openrouter.ai/api/v1/chat/completions",
+  {
+    method: "POST",
+
     headers: {
-      'Content-Type': 'application/json'
+      "Authorization": `Bearer ${API_KEY}`,
+      "Content-Type": "application/json"
     },
+
     body: JSON.stringify({
-      contents: [
+
+      model: "openai/gpt-3.5-turbo",
+
+      messages: [
         {
-          parts: [
-            {
-              text: systemPrompt + "\n\nUser: " + text
-            }
-          ]
+          role: "system",
+          content: systemPrompt
+        },
+
+        {
+          role: "user",
+          content: text
         }
       ]
+
     })
   }
 );
 
 const data = await resp.json();
-if (resp.status === 429) {
-  renderAiMessage('ai', '<p>⚠️ Too many requests. Please wait a few seconds.</p>');
-  return;
-}
 
 console.log(data);
 
+if (!resp.ok) {
+
+  removeTypingIndicator();
+
+  renderAiMessage(
+    'ai',
+    `<p>⚠️ ${data.error?.message || 'AI request failed'}</p>`
+  );
+
+  aiIsTyping = false;
+
+  qs('aiSendBtn').disabled = false;
+
+  return;
+}
+
 const reply =
-  data.candidates?.[0]?.content?.parts?.[0]?.text ||
-  'No response received.';
-  
+  data.choices?.[0]?.message?.content ||
+  "No response received.";
     aiHistory.push({ role: 'assistant', content: reply });
     removeTypingIndicator();
     renderAiMessage('ai', mdToHtml(reply));
@@ -602,5 +622,117 @@ if(themeToggle){
   };
 
 }
+/* =========================================
+   FLOATING AI POPUP
+========================================= */
 
+window.toggleAiPopup = function() {
+  const aiPopup = document.getElementById('aiPopup');
+  if (aiPopup) {
+    aiPopup.classList.toggle('show-ai');
+  }
+};
 
+window.closeAiPopupFn = function() {
+  const aiPopup = document.getElementById('aiPopup');
+  if (aiPopup) {
+    aiPopup.classList.remove('show-ai');
+  }
+};
+
+window.addEventListener('DOMContentLoaded', () => {
+  const closeBtn = document.getElementById('closeAiPopup');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', window.closeAiPopupFn);
+  }
+});
+// ═══════════════════════════════
+// FLOATING POPUP CHAT LOGIC
+// ═══════════════════════════════
+
+let popupHistory = [];
+let popupTyping = false;
+
+function popupRenderMsg(role, html) {
+  const welcome = document.getElementById('popupWelcome');
+  if (welcome) welcome.remove();
+  const wrap = document.getElementById('popupMessages');
+  const div = document.createElement('div');
+  div.className = `popup-msg ${role}`;
+  div.innerHTML = `<div class="popup-msg-bubble">${html}</div>`;
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function popupShowTyping() {
+  const welcome = document.getElementById('popupWelcome');
+  if (welcome) welcome.remove();
+  const wrap = document.getElementById('popupMessages');
+  const div = document.createElement('div');
+  div.className = 'popup-msg ai';
+  div.id = 'popupTypingIndicator';
+  div.innerHTML = `<div class="popup-typing"><span></span><span></span><span></span></div>`;
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function popupRemoveTyping() {
+  const el = document.getElementById('popupTypingIndicator');
+  if (el) el.remove();
+}
+
+window.sendPopupMessage = async function() {
+  const input = document.getElementById('popupAiInput');
+  const sendBtn = document.getElementById('popupSendBtn');
+  const text = input.value.trim();
+  if (!text || popupTyping) return;
+  input.value = '';
+  input.style.height = '';
+  popupTyping = true;
+  sendBtn.disabled = true;
+  popupRenderMsg('user', escapeHtml(text));
+  popupHistory.push({ role: 'user', content: text });
+  popupShowTyping();
+
+  const API_KEY = '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';
+  try {
+    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'You are a helpful AI study assistant for students. Keep answers concise and clear.' },
+          ...popupHistory
+        ]
+      })
+    });
+    const data = await resp.json();
+    popupRemoveTyping();
+    if (!resp.ok) {
+      popupRenderMsg('ai', `⚠️ ${data.error?.message || 'Request failed'}`);
+    } else {
+      const reply = data.choices?.[0]?.message?.content || 'No response received.';
+      popupHistory.push({ role: 'assistant', content: reply });
+      popupRenderMsg('ai', mdToHtml(reply));
+    }
+  } catch(e) {
+    popupRemoveTyping();
+    popupRenderMsg('ai', '⚠️ Connection error. Check your internet and try again.');
+  }
+  popupTyping = false;
+  sendBtn.disabled = false;
+  input.focus();
+};
+
+window.popupInputKeydown = function(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPopupMessage(); }
+};
+
+window.autoResizePopupInput = function(el) {
+  el.style.height = '';
+  el.style.height = Math.min(el.scrollHeight, 90) + 'px';
+};
