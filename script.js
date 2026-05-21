@@ -500,7 +500,7 @@ window.sendAiMessage = async function() {
   const mode = AI_MODES[aiMode];
   const systemPrompt = mode.system + (aiMode==='planner'?getStudentContext():'');
   try {
-    const API_KEY = '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';
+    const API_KEY = '';
 
 const resp = await fetch(
   "https://openrouter.ai/api/v1/chat/completions",
