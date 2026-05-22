@@ -1,6 +1,6 @@
 function uid(){ return (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2); }
-const storageKey='studyflow_rebuilt_final_v2';
-const authKey='studyflow_auth_rebuilt_v2';
+const storageKey='studyflow_rebuilt_final_v3';
+const authKey='studyflow_auth_rebuilt_v3';
 const defaultState={
   settings:{toasts:true,autosave:true,profileName:'',accent:'#2563eb'},
   tasks:[
