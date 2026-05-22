@@ -152,22 +152,31 @@ function renderAuth(){
     qs(btn.dataset.auth+'Pane').classList.remove('hidden');
   }));
 
-  const completeLogin=(name,email)=>{
-    saveAuth({loggedIn:true,name,email});
-    state.settings.profileName=name;
+ const completeLogin = (name, email) => {
+
+    saveAuth({
+        loggedIn: true,
+        name,
+        email
+    });
+
+    state.settings.profileName = name;
+
     saveState();
+
     showSFIntro(name, () => {
 
-  qs('authRoot').innerHTML='';
+        qs('authRoot').innerHTML = '';
 
-  qs('appRoot').classList.remove('hidden');
+        qs('appRoot').classList.remove('hidden');
 
-  renderAll();
+        renderAll();
 
-  switchPage('dashboard');
+        switchPage('dashboard');
 
-});
+    });
 
+};
   qs('loginBtn').onclick = () => {
 
   const email = qs('loginEmail').value.trim();
