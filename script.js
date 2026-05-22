@@ -156,9 +156,11 @@ function renderAuth(){
     saveAuth({loggedIn:true,name,email});
     state.settings.profileName=name;
     saveState();
-    renderAuth();
-    renderAll();
-    switchPage('dashboard');
+    showSFIntro(name, () => {
+  renderAuth();
+  renderAll();
+  switchPage('dashboard');
+});
   };
 
   qs('loginBtn').onclick = () => {
@@ -750,7 +752,7 @@ function showSFIntro(userName, onDone){
       <div id="sfIcon">📘</div>
       <div id="sfName"><span id="sfS">Study</span><span id="sfF">Flow</span></div>
       <div id="sfBar"></div>
-      <div id="sfUser">Welcome, ` + '${escapeHtml(userName)}' + `</div>
+      <div id="sfUser">Welcome, ${escapeHtml(userName)}</div>
     </div>`;
   document.body.appendChild(o);
   const d = ms => new Promise(r => setTimeout(r, ms));
