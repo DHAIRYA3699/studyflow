@@ -5136,3 +5136,84 @@ body.dark .btn.primary{
         visibility:hidden;
     }
 }
+/* SPLASH SCREEN */
+
+#splashScreen{
+    position:fixed;
+    inset:0;
+    background:#eef4ff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:99999;
+    overflow:hidden;
+}
+
+.splash-title{
+    position:relative;
+    font-size:120px;
+    font-weight:900;
+    letter-spacing:4px;
+    color:white;
+    -webkit-text-stroke:3px #2563eb;
+    text-transform:uppercase;
+    overflow:hidden;
+}
+
+/* BLUE WAVE FILL */
+.splash-title::before{
+    content:"STUDYFLOW";
+    position:absolute;
+    left:0;
+    top:0;
+    width:100%;
+    height:100%;
+    color:#2563eb;
+
+    background:linear-gradient(
+        180deg,
+        #60a5fa 0%,
+        #2563eb 50%,
+        #1d4ed8 100%
+    );
+
+    -webkit-background-clip:text;
+    background-clip:text;
+    -webkit-text-fill-color:transparent;
+
+    clip-path:polygon(
+        0% 100%,
+        0% 80%,
+        10% 75%,
+        20% 82%,
+        30% 70%,
+        40% 78%,
+        50% 65%,
+        60% 72%,
+        70% 60%,
+        80% 70%,
+        90% 58%,
+        100% 65%,
+        100% 100%
+    );
+
+    animation:waveFill 2.5s ease forwards;
+}
+
+@keyframes waveFill{
+    0%{
+        transform:translateY(100%);
+    }
+
+    100%{
+        transform:translateY(0%);
+    }
+}
+
+/* FADE OUT */
+
+#splashScreen.fade-out{
+    opacity:0;
+    transition:opacity .8s ease;
+    pointer-events:none;
+}
