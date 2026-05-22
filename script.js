@@ -792,7 +792,7 @@ function showSFIntro(userName, onDone){
     document.getElementById('sfBar').classList.add('on');
     await d(380);
     document.getElementById('sfUser').classList.add('on');
-    await d(950);
+    await d(600);
     o.classList.add('sf-out');
     await d(650);
     o.remove();
