@@ -152,16 +152,9 @@ function renderAuth(){
     qs(btn.dataset.auth+'Pane').classList.remove('hidden');
   }));
 
-  const completeLogin=(name,email)=>{
-    saveAuth({loggedIn:true,name,email});
-    state.settings.profileName=name;
-    saveState();
-    showSFIntro(name, () => {
-  renderAuth();
-  renderAll();
-  switchPage('dashboard');
-});
-  };
+ const completeLogin=(name,email)=>{
+    startDashboardTransition(name,email);
+};
 
   qs('loginBtn').onclick = () => {
 
