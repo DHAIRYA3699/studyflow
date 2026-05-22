@@ -4,17 +4,16 @@ const authKey='studyflow_auth_rebuilt_v2';
 const defaultState={
   settings:{toasts:true,autosave:true,profileName:'',accent:'#2563eb'},
   tasks:[
-    {id:uid(),title:'Revise DBMS unit 2',desc:'Finish normalization and joins',due:'',priority:'high',done:false},
-    {id:uid(),title:'Complete project report',desc:'Write intro and methodology',due:'',priority:'medium',done:false}
+    
   ],
-  notes:[{id:uid(),title:'Welcome',body:'Use this dashboard to organize tasks, notes, exams, and study progress efficiently.',createdAt:Date.now()}],
+  notes:[],
   calendarDate:new Date().toISOString(),
   timerSeconds:1500,timerRunning:false,timerMode:1500,focusSessions:[],
   timetable:[{id:uid(),name:'Math',day:'Mon',time:'9:00 - 10:00',color:'#2563eb'}],
   grades:[{id:uid(),subject:'Math',score:84,credits:4},{id:uid(),subject:'DBMS',score:77,credits:3}],
   habits:[{id:uid(),name:'Drink Water',icon:'💧',target:5,days:[false,false,false,false,false,false,false]}],
   flashcards:[{id:uid(),deck:'DBMS',question:'What is normalization?',answer:'Organizing data to reduce redundancy.'}],
-  exams:[{id:uid(),name:'Mid Sem',subject:'OS',date:new Date(Date.now()+7*86400000).toISOString().slice(0,10)}],
+  exams:[],
   goals:[{id:uid(),title:'Complete Syllabus',target:100,progress:45}],
   ui:{selectedDeck:'DBMS',flashIndex:0,flashFlipped:false}
 };
@@ -152,30 +151,8 @@ function renderAuth(){
     qs(btn.dataset.auth+'Pane').classList.remove('hidden');
   }));
 
- const completeLogin = (name, email) => {
-
-    saveAuth({
-        loggedIn: true,
-        name,
-        email
-    });
-
-    state.settings.profileName = name;
-
-    saveState();
-
-    showSFIntro(name, () => {
-
-        qs('authRoot').innerHTML = '';
-
-        qs('appRoot').classList.remove('hidden');
-
-        renderAll();
-
-        switchPage('dashboard');
-
-    });
-
+ const completeLogin=(name,email)=>{
+    startDashboardTransition(name,email);
 };
   qs('loginBtn').onclick = () => {
 
@@ -238,7 +215,40 @@ function renderAuth(){
 }
 
 
-function openConfirmModal(title,message,onConfirm){
+function startDashboardTransition(name,email){
+
+    const splash = document.getElementById("splashScreen");
+
+    splash.classList.remove("hidden");
+
+    saveAuth({
+        loggedIn:true,
+        name,
+        email
+    });
+
+    state.settings.profileName = name;
+
+    saveState();
+
+    setTimeout(()=>{
+
+        renderAuth();
+        renderAll();
+        switchPage('dashboard');
+
+        splash.classList.add("fade-out");
+
+        setTimeout(()=>{
+
+            splash.classList.add("hidden");
+            splash.classList.remove("fade-out");
+
+        },800);
+
+    },2500);
+}
+    function openConfirmModal(title,message,onConfirm){
   closeConfirmModal();
   const wrap=document.createElement('div');
   wrap.className='modal-backdrop';
@@ -283,8 +293,49 @@ function bindStaticEvents(){
   window.__studyflowBound=true;
   document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>switchPage(btn.dataset.page));
   qs('sidebarNewTaskBtn').onclick=()=>switchPage('tasks');
-  qs('logoutBtn').onclick=()=>openConfirmModal('Logout','Are you sure you want to logout from the dashboard?',()=>{ pauseTimer(); clearAuth(); closeConfirmModal(); renderAuth(); });
-  qs('resetAllBtn').onclick=()=>openConfirmModal('Reset Data','This will remove current dashboard data and restore the default project state.',()=>{ pauseTimer(); state=clone(defaultState); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(); renderAll(); switchPage('dashboard'); closeConfirmModal(); toast('Data reset successfully'); });
+  qs('logoutBtn').onclick=()=>openConfirmModal('Logout','Are you sure you want to logout from the dashboard?',()=>{ pauseTimer(); clearAuth(); closeConfirmModal(); renderAuth(); })
+ qs('resetAllBtn').onclick = () => {
+
+    const confirmReset = confirm(
+        "Reset all dashboard data?"
+    );
+
+    if(!confirmReset) return;
+
+    // FORCE CLEAN DEFAULT STATE
+    state = JSON.parse(JSON.stringify(defaultState));
+
+    // OVERWRITE STORAGE COMPLETELY
+    localStorage.setItem(
+        storageKey,
+        JSON.stringify(state)
+    );
+
+    // RESET DATE
+    calendarCursor = new Date();
+
+    // STOP TIMER
+    pauseTimer();
+
+    // FULL UI REFRESH
+    renderDashboard();
+    renderTasks();
+    renderNotes();
+    renderCalendar();
+    renderTimer();
+    renderAnalytics();
+    renderTimetable();
+    renderGrades();
+    renderHabits();
+    renderFlashcards();
+    renderExams();
+    renderGoals();
+
+    // GO TO DASHBOARD
+    switchPage('dashboard');
+
+    toast('Dashboard reset successfully');
+};
   qs('exportBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='studyflow-data.json'; a.click(); URL.revokeObjectURL(a.href); };
   qs('importFile').onchange=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const imported=JSON.parse(reader.result); state=mergeState(defaultState,imported); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(); renderAll(); toast('Data imported'); }catch(err){ toast('Invalid JSON file'); } }; reader.readAsText(file); e.target.value=''; };
 
@@ -517,7 +568,7 @@ window.sendAiMessage = async function() {
   const mode = AI_MODES[aiMode];
   const systemPrompt = mode.system + (aiMode==='planner'?getStudentContext():'');
   try {
-    const API_KEY = '';
+    const API_KEY = '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';
 
 const resp = await fetch(
   "https://openrouter.ai/api/v1/chat/completions",
@@ -643,116 +694,53 @@ if(themeToggle){
    FLOATING AI POPUP
 ========================================= */
 
-window.toggleAiPopup = function() {
-  const aiPopup = document.getElementById('aiPopup');
-  if (aiPopup) {
-    aiPopup.classList.toggle('show-ai');
-  }
-};
+window.addEventListener('DOMContentLoaded', ()=>{
 
-window.closeAiPopupFn = function() {
-  const aiPopup = document.getElementById('aiPopup');
-  if (aiPopup) {
-    aiPopup.classList.remove('show-ai');
-  }
-};
+  const floatingAiBtn =
+    document.getElementById('floatingAiBtn');
 
-window.addEventListener('DOMContentLoaded', () => {
-  const closeBtn = document.getElementById('closeAiPopup');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', window.closeAiPopupFn);
+  const aiPopup =
+    document.getElementById('aiPopup');
+
+  console.log(floatingAiBtn);
+  console.log(aiPopup);
+
+  if(floatingAiBtn && aiPopup){
+
+    floatingAiBtn.addEventListener(
+      'click',
+      ()=>{
+
+        aiPopup.classList.toggle('open');
+
+      }
+    );
+
   }
+
 });
-// ═══════════════════════════════
-// FLOATING POPUP CHAT LOGIC
-// ═══════════════════════════════
 
-let popupHistory = [];
-let popupTyping = false;
+// FLOATING AI CHAT
 
-function popupRenderMsg(role, html) {
-  const welcome = document.getElementById('popupWelcome');
-  if (welcome) welcome.remove();
-  const wrap = document.getElementById('popupMessages');
-  const div = document.createElement('div');
-  div.className = `popup-msg ${role}`;
-  div.innerHTML = `<div class="popup-msg-bubble">${html}</div>`;
-  wrap.appendChild(div);
-  wrap.scrollTop = wrap.scrollHeight;
+const floatingAiBtn = document.getElementById('floatingAiBtn');
+const aiPopup = document.getElementById('aiPopup');
+const closeAiPopup = document.getElementById('closeAiPopup');
+
+if (floatingAiBtn && aiPopup) {
+
+  floatingAiBtn.addEventListener('click', () => {
+    aiPopup.classList.toggle('show');
+  });
+
 }
 
-function popupShowTyping() {
-  const welcome = document.getElementById('popupWelcome');
-  if (welcome) welcome.remove();
-  const wrap = document.getElementById('popupMessages');
-  const div = document.createElement('div');
-  div.className = 'popup-msg ai';
-  div.id = 'popupTypingIndicator';
-  div.innerHTML = `<div class="popup-typing"><span></span><span></span><span></span></div>`;
-  wrap.appendChild(div);
-  wrap.scrollTop = wrap.scrollHeight;
+if (closeAiPopup) {
+
+  closeAiPopup.addEventListener('click', () => {
+    aiPopup.classList.remove('show');
+  });
+
 }
-
-function popupRemoveTyping() {
-  const el = document.getElementById('popupTypingIndicator');
-  if (el) el.remove();
-}
-
-window.sendPopupMessage = async function() {
-  const input = document.getElementById('popupAiInput');
-  const sendBtn = document.getElementById('popupSendBtn');
-  const text = input.value.trim();
-  if (!text || popupTyping) return;
-  input.value = '';
-  input.style.height = '';
-  popupTyping = true;
-  sendBtn.disabled = true;
-  popupRenderMsg('user', escapeHtml(text));
-  popupHistory.push({ role: 'user', content: text });
-  popupShowTyping();
-
-  const API_KEY = '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';
-  try {
-    const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'You are a helpful AI study assistant for students. Keep answers concise and clear.' },
-          ...popupHistory
-        ]
-      })
-    });
-    const data = await resp.json();
-    popupRemoveTyping();
-    if (!resp.ok) {
-      popupRenderMsg('ai', `⚠️ ${data.error?.message || 'Request failed'}`);
-    } else {
-      const reply = data.choices?.[0]?.message?.content || 'No response received.';
-      popupHistory.push({ role: 'assistant', content: reply });
-      popupRenderMsg('ai', mdToHtml(reply));
-    }
-  } catch(e) {
-    popupRemoveTyping();
-    popupRenderMsg('ai', '⚠️ Connection error. Check your internet and try again.');
-  }
-  popupTyping = false;
-  sendBtn.disabled = false;
-  input.focus();
-};
-
-window.popupInputKeydown = function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPopupMessage(); }
-};
-
-window.autoResizePopupInput = function(el) {
-  el.style.height = '';
-  el.style.height = Math.min(el.scrollHeight, 90) + 'px';
-};
 /* ===== SF INTRO ===== */
 function showSFIntro(userName, onDone){
   const ex = document.getElementById('sfIntroOverlay');
@@ -767,7 +755,7 @@ function showSFIntro(userName, onDone){
       <div id="sfIcon">📘</div>
       <div id="sfName"><span id="sfS">Study</span><span id="sfF">Flow</span></div>
       <div id="sfBar"></div>
-      <div id="sfUser">Welcome, ${escapeHtml(userName)}</div>
+      <div id="sfUser">Welcome, ` + '${escapeHtml(userName)}' + `</div>
     </div>`;
   document.body.appendChild(o);
   const d = ms => new Promise(r => setTimeout(r, ms));
