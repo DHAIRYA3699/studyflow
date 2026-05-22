@@ -5385,3 +5385,87 @@ span,
 small{
     color:#64748b;
 }
+/* FINAL LIGHT MODE GOAL FIX */
+
+.goal,
+.goal-card,
+.goals-list .item,
+.goal-item{
+    background:#ffffff !important;
+    color:#0f172a !important;
+
+    border:1px solid #e2e8f0 !important;
+
+    box-shadow:
+        0 8px 24px rgba(15,23,42,.06) !important;
+
+    border-radius:22px !important;
+}
+
+/* Goal text */
+
+.goal h3,
+.goal h4,
+.goal strong,
+.goal-title{
+    color:#0f172a !important;
+}
+
+/* Small text */
+
+.goal p,
+.goal span,
+.goal small{
+    color:#64748b !important;
+}
+
+/* Progress bar */
+
+.goal progress,
+.goal .progress{
+    background:#dbeafe !important;
+}
+
+/* Delete button */
+
+.goal .delete,
+.goal button:last-child{
+    background:#fee2e2 !important;
+    color:#dc2626 !important;
+    border:none !important;
+}
+
+/* Increase button */
+
+.goal .inc,
+.goal button:first-child{
+    background:#2563eb !important;
+    color:white !important;
+}
+
+/* Cleaner hover */
+
+.goal:hover{
+    transform:translateY(-2px);
+    transition:.2s ease;
+}
+/* FINAL UI POLISH */
+
+body{
+    background:
+    linear-gradient(
+        180deg,
+        #f8fbff,
+        #eef4ff
+    ) !important;
+}
+
+.sidebar{
+    border-right:1px solid #e2e8f0;
+}
+
+.section,
+.card{
+    box-shadow:
+        0 8px 24px rgba(15,23,42,.05);
+}
