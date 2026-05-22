@@ -736,3 +736,41 @@ window.autoResizePopupInput = function(el) {
   el.style.height = '';
   el.style.height = Math.min(el.scrollHeight, 90) + 'px';
 };
+/* ===== SF INTRO ===== */
+function showSFIntro(userName, onDone){
+  const ex = document.getElementById('sfIntroOverlay');
+  if(ex) ex.remove();
+  const o = document.createElement('div');
+  o.id = 'sfIntroOverlay';
+  o.innerHTML = `
+    <div class="sf-grid"></div>
+    <div class="sf-glow sf-g1"></div>
+    <div class="sf-glow sf-g2"></div>
+    <div id="sfBox">
+      <div id="sfIcon">📘</div>
+      <div id="sfName"><span id="sfS">Study</span><span id="sfF">Flow</span></div>
+      <div id="sfBar"></div>
+      <div id="sfUser">Welcome, ` + '${escapeHtml(userName)}' + `</div>
+    </div>`;
+  document.body.appendChild(o);
+  const d = ms => new Promise(r => setTimeout(r, ms));
+  async function run(){
+    await d(80);
+    document.getElementById('sfIcon').classList.add('on');
+    await d(180);
+    document.getElementById('sfS').classList.add('on');
+    await d(110);
+    document.getElementById('sfF').classList.add('on');
+    await d(280);
+    document.getElementById('sfBar').classList.add('on');
+    await d(380);
+    document.getElementById('sfUser').classList.add('on');
+    await d(950);
+    o.classList.add('sf-out');
+    await d(650);
+    o.remove();
+    onDone && onDone();
+  }
+  run();
+}
+ 
