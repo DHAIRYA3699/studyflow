@@ -4,16 +4,31 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>StudyFlow — Student Productivity Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-</style>
 </head>
 <body>
-  <div id="splashScreen" class="hidden">
-    <h1 class="splash-title">STUDYFLOW</h1>
-</div>
+  <div id="splashScreen" class="hidden" aria-live="polite" aria-label="Loading StudyFlow">
+    <div class="splash-bg" aria-hidden="true">
+      <div class="sf-grid"></div>
+      <div class="sf-glow sf-g1"></div>
+      <div class="sf-glow sf-g2"></div>
+    </div>
+    <div class="splash-content">
+      <div class="splash-logo" aria-hidden="true">📘</div>
+      <h1 class="splash-title">Study<span>Flow</span></h1>
+      <p class="splash-sub">Student Productivity Suite</p>
+      <div class="splash-progress" aria-hidden="true"><span></span></div>
+      <div class="splash-tagline" aria-hidden="true">
+        <span class="splash-dot"></span>
+        <span class="splash-dot"></span>
+        <span class="splash-dot"></span>
+      </div>
+    </div>
+  </div>
 <div id="authRoot"></div>
 <div class="layout hidden" id="appRoot">
   <aside class="sidebar">
@@ -87,7 +102,7 @@
         <div class="card stat"><div class="label">Notes</div><div class="value" id="statNotes">0</div></div>
         <div class="card stat"><div class="label">Overall Progress</div><div class="value" id="statProgress">0%</div></div>
       </div>
-      <div class="grid content" style="margin-top:18px;">
+      <div class="grid content dash-content">
         <div class="card section">
           <div class="row between"><h2>Recent Tasks</h2><span class="chip" id="dashTaskChip">0 pending</span></div>
           <div id="dashboardTasks"></div>
@@ -252,6 +267,7 @@
           <button class="active settingsTab" data-tab="general">General</button>
           <button class="settingsTab" data-tab="profile">Profile</button>
           <button class="settingsTab" data-tab="appearance">Appearance</button>
+          <button class="settingsTab" data-tab="integrations">Integrations</button>
         </div>
         <div class="card section">
           <div id="settings-general" class="settingsPane">
@@ -261,47 +277,33 @@
           </div>
           <div id="settings-profile" class="settingsPane hide">
             <h2>Profile</h2>
-            <div class="setting-row"><div><strong>Name</strong><div class="muted">Shown in exports</div></div><input class="input" id="profileName" style="max-width:240px" placeholder="Your name"></div>
+            <div class="setting-row"><div><strong>Name</strong><div class="muted">Shown in exports and welcome message</div></div><input class="input" id="profileName" style="max-width:240px" placeholder="Your name" /></div>
           </div>
-         <div id="settings-appearance" class="settingsPane hide">
-
-    <h2>Appearance</h2>
-
-    <div class="setting-row">
-        <div>
-            <strong>Dark Mode</strong>
-            <div class="muted">
-                Switch between light and dark theme
+          <div id="settings-appearance" class="settingsPane hide">
+            <h2>Appearance</h2>
+            <div class="setting-row">
+              <div><strong>Dark Mode</strong><div class="muted">Switch between light and dark theme</div></div>
+              <button type="button" id="themeToggleSettings" class="btn small js-theme-toggle">🌙 Dark</button>
             </div>
-        </div>
-
-        <button id="themeToggle" class="btn small">
-            🌙 Dark
-        </button>
-    </div>
-
-    <div class="setting-row">
-        <div>
-            <strong>Primary Color</strong>
-            <div class="muted">
-                Change accent color
+            <div class="setting-row">
+              <div><strong>Primary Color</strong><div class="muted">Accent used across the dashboard</div></div>
+              <input type="color" id="accentColor" value="#2563eb" />
             </div>
+          </div>
+          <div id="settings-integrations" class="settingsPane hide">
+            <h2>Integrations</h2>
+            <div class="setting-row">
+              <div><strong>OpenRouter API Key</strong><div class="muted">Powers the floating ✦ AI button (bottom-right). Stored only in this browser. <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">Get a key</a></div></div>
+              <input type="text" class="input api-key-field" id="openRouterApiKey" style="max-width:280px" placeholder="sk-or-…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" name="studyflow-openrouter-api" aria-label="OpenRouter API key" />
+            </div>
+            <p class="muted" id="apiKeyStatus" style="margin-top:8px;font-size:13px;"></p>
+          </div>
         </div>
-
-        <input type="color" id="accentColor" value="#2563eb">
-    </div>
-
-</div>
-</div>
+      </div>
     </section>
-
-    </section>
-     </div>
   </main>
 </div>
 <div class="toast" id="toast"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 
 <button class="floating-ai-btn" onclick="toggleAiPopup()">
