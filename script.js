@@ -157,11 +157,16 @@ function renderAuth(){
     state.settings.profileName=name;
     saveState();
     showSFIntro(name, () => {
-  renderAuth();
+
+  qs('authRoot').innerHTML='';
+
+  qs('appRoot').classList.remove('hidden');
+
   renderAll();
+
   switchPage('dashboard');
+
 });
-  };
 
   qs('loginBtn').onclick = () => {
 
@@ -222,39 +227,7 @@ function renderAuth(){
     completeLogin(name,'guest@demo.local');
   };
 }
-function startDashboardTransition(name,email){
 
-    const splash = document.getElementById("splashScreen");
-
-    splash.classList.remove("hidden");
-
-    saveAuth({
-        loggedIn:true,
-        name,
-        email
-    });
-
-    state.settings.profileName = name;
-
-    saveState();
-
-    setTimeout(()=>{
-
-        renderAuth();
-        renderAll();
-        switchPage('dashboard');
-
-        splash.classList.add("fade-out");
-
-        setTimeout(()=>{
-
-            splash.classList.add("hidden");
-            splash.classList.remove("fade-out");
-
-        },800);
-
-    },2500);
-}
 
 function openConfirmModal(title,message,onConfirm){
   closeConfirmModal();
