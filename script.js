@@ -1,8 +1,23 @@
 function uid(){ return (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2); }
 const storageKey='studyflow_rebuilt_final_v3';
 const authKey='studyflow_auth_rebuilt_v3';
+/** Paste your OpenRouter key here: https://openrouter.ai/keys — or use localStorage key studyflow_openrouter_api */
+const OPENROUTER_API_KEY='';
+function getOpenRouterApiKey(){
+  return (state.settings?.openRouterApiKey||localStorage.getItem('studyflow_openrouter_api')||OPENROUTER_API_KEY||'').trim();
+}
+function syncApiKeyStorage(){
+  const key=getOpenRouterApiKey();
+  if(key) localStorage.setItem('studyflow_openrouter_api',key);
+  else localStorage.removeItem('studyflow_openrouter_api');
+}
+function updateApiKeyStatus(){
+  const el=qs('apiKeyStatus');
+  if(!el) return;
+  el.textContent=getOpenRouterApiKey() ? 'API key saved locally. Use the ✦ button (bottom-right) to chat.' : 'No API key yet — add one above to enable the floating AI chat.';
+}
 const defaultState={
-  settings:{toasts:true,autosave:true,profileName:'',accent:'#2563eb'},
+  settings:{toasts:true,autosave:true,profileName:'',accent:'#2563eb',openRouterApiKey:''},
   tasks:[
    
   ],
@@ -18,9 +33,36 @@ const defaultState={
   ui:{selectedDeck:'DBMS',flashIndex:0,flashFlipped:false}
 };
 let state=loadState();
+normalizeStateArrays();
 let timerInterval=null;
 let calendarCursor=new Date(state.calendarDate || new Date().toISOString());
 let priorityChart=null,gradeChart=null;
+let saveTimer=null;
+let profileSaveTimer=null;
+let sessionLoggedIn=false;
+let lastPage=null;
+let splashTimers=[];
+const MAX_CHAT_HISTORY=20;
+
+function flushSave(){
+  clearTimeout(saveTimer);
+  saveTimer=null;
+  if(state.settings?.autosave===false) return;
+  localStorage.setItem(storageKey,JSON.stringify(state));
+}
+function scheduleSave(){
+  if(state.settings?.autosave===false) return;
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(flushSave,300);
+}
+function saveState(immediate=false){
+  if(state.settings?.autosave===false) return;
+  if(immediate) flushSave();
+  else scheduleSave();
+}
+function capHistory(arr){
+  while(arr.length>MAX_CHAT_HISTORY) arr.shift();
+}
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
 function mergeState(base,incoming){
   const merged=clone(base);
@@ -32,7 +74,16 @@ function mergeState(base,incoming){
   return merged;
 }
 function loadState(){ try{ const raw=localStorage.getItem(storageKey); return raw ? mergeState(defaultState,JSON.parse(raw)) : clone(defaultState); }catch(e){ return clone(defaultState); } }
-function saveState(){ if(state.settings?.autosave!==false) localStorage.setItem(storageKey,JSON.stringify(state)); }
+function normalizeStateArrays(){
+  ['tasks','notes','exams','goals','grades','habits','flashcards','timetable','focusSessions'].forEach(k=>{
+    if(!Array.isArray(state[k])) state[k]=[];
+  });
+  if(!state.ui || typeof state.ui!=='object') state.ui=clone(defaultState.ui);
+  if(!state.settings || typeof state.settings!=='object') state.settings=clone(defaultState.settings);
+  if(typeof state.settings.openRouterApiKey!=='string'){
+    state.settings.openRouterApiKey=localStorage.getItem('studyflow_openrouter_api')||'';
+  }
+}
 function loadAuth(){ try{ return JSON.parse(localStorage.getItem(authKey)||'null'); }catch(e){ return null; } }
 function saveAuth(data){ localStorage.setItem(authKey,JSON.stringify(data)); }
 function clearAuth(){ localStorage.removeItem(authKey); }
@@ -52,22 +103,31 @@ function saveUsers(users){
 function qs(id){ return document.getElementById(id); }
 function escapeHtml(str=''){ return String(str).replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 function toast(msg){ if(state.settings?.toasts===false) return; const el=qs('toast'); if(!el) return; el.textContent=msg; el.classList.add('show'); clearTimeout(window.__toastTimer); window.__toastTimer=setTimeout(()=>el.classList.remove('show'),1800); }
+function localDateKey(d=new Date()){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function daysLeft(dateStr){ const today=new Date(); today.setHours(0,0,0,0); const d=new Date(dateStr+'T00:00:00'); return Math.ceil((d-today)/86400000); }
 function formatDate(dateStr){ if(!dateStr) return 'No due date'; return new Date(dateStr+'T00:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); }
 function shadeHexColor(hex,percent){ const clean=String(hex).replace('#',''); const full=clean.length===3 ? clean.split('').map(c=>c+c).join('') : clean; const num=parseInt(full,16); const amt=Math.round(2.55*percent); const r=Math.max(0,Math.min(255,(num>>16)+amt)); const g=Math.max(0,Math.min(255,((num>>8)&255)+amt)); const b=Math.max(0,Math.min(255,(num&255)+amt)); return '#' + (0x1000000 + r*0x10000 + g*0x100 + b).toString(16).slice(1); }
 function applyAccentColor(color){ const accent=color || '#2563eb'; document.documentElement.style.setProperty('--primary',accent); document.documentElement.style.setProperty('--primary-2',shadeHexColor(accent,-10)); document.documentElement.style.setProperty('--primary-soft',shadeHexColor(accent,38)); }
 function getTimeStartLabel(time=''){ const match=String(time).match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i); if(!match) return ''; let hour=Number(match[1]); const minute=(match[2]||'00').padStart(2,'0'); const suffix=(match[3]||'').toLowerCase(); if(suffix==='pm' && hour<12) hour+=12; if(suffix==='am' && hour===12) hour=0; return `${hour}:${minute}`; }
 
+function clearSplashTimers(){
+  splashTimers.forEach(id=>clearTimeout(id));
+  splashTimers=[];
+}
 function renderAuth(){
   const auth=loadAuth();
   if(auth?.loggedIn){
+    sessionLoggedIn=true;
     qs('authRoot').innerHTML='';
     qs('appRoot').classList.remove('hidden');
     if(qs('todayDatePill')) qs('todayDatePill').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'short'});
     if(qs('welcomeChip')) qs('welcomeChip').textContent='Welcome, '+(state.settings.profileName || auth.name || 'Student');
-    if(!state.settings.profileName && auth.name){ state.settings.profileName=auth.name; saveState(); }
+    if(!state.settings.profileName && auth.name){ state.settings.profileName=auth.name; saveState(true); }
     return;
   }
+  sessionLoggedIn=false;
+  destroyCharts();
+  pauseTimer();
   qs('appRoot').classList.add('hidden');
   qs('authRoot').innerHTML=`
   <section class="auth-shell">
@@ -161,7 +221,7 @@ function renderAuth(){
   const password = qs('loginPassword').value.trim();
 
   if(!email || !password){
-    return alert('Enter email and password');
+    return toast('Enter email and password');
   }
 
   const users = loadUsers();
@@ -172,7 +232,7 @@ function renderAuth(){
   );
 
   if(!user){
-    return alert('Invalid email or password');
+    return toast('Invalid email or password');
   }
 
   completeLogin(user.name, user.email);
@@ -185,7 +245,7 @@ function renderAuth(){
   const password = qs('signupPassword').value.trim();
 
   if(!name || !email || !password){
-    return alert('Fill all sign up fields');
+    return toast('Fill all sign up fields');
   }
 
   const users = loadUsers();
@@ -193,7 +253,7 @@ function renderAuth(){
   const existingUser = users.find(u => u.email === email);
 
   if(existingUser){
-    return alert('Account already exists');
+    return toast('Account already exists');
   }
 
   users.push({
@@ -205,7 +265,7 @@ function renderAuth(){
 
   saveUsers(users);
 
-  alert('Account created successfully');
+  toast('Account created successfully');
 
   completeLogin(name, email);
 };
@@ -215,37 +275,23 @@ function renderAuth(){
   };
 }
 function startDashboardTransition(name,email){
-
-    const splash = document.getElementById("splashScreen");
-
-    splash.classList.remove("hidden");
-
-    saveAuth({
-        loggedIn:true,
-        name,
-        email
-    });
-
-    state.settings.profileName = name;
-
-    saveState();
-
-    setTimeout(()=>{
-
+    const splash=document.getElementById('splashScreen');
+    clearSplashTimers();
+    splash.classList.remove('hidden');
+    saveAuth({loggedIn:true,name,email});
+    state.settings.profileName=name;
+    saveState(true);
+    splashTimers.push(setTimeout(()=>{
         renderAuth();
+        bindDelegatedEvents();
         renderAll();
         switchPage('dashboard');
-
-        splash.classList.add("fade-out");
-
-        setTimeout(()=>{
-
-            splash.classList.add("hidden");
-            splash.classList.remove("fade-out");
-
-        },800);
-
-    },2500);
+        splash.classList.add('fade-out');
+        splashTimers.push(setTimeout(()=>{
+            splash.classList.add('hidden');
+            splash.classList.remove('fade-out');
+        },800));
+    },2500));
 }
 
 function openConfirmModal(title,message,onConfirm){
@@ -260,7 +306,31 @@ function openConfirmModal(title,message,onConfirm){
 }
 function closeConfirmModal(){ const modal=qs('confirmModal'); if(modal) modal.remove(); }
 
+function destroyCharts(){
+  if(priorityChart){ priorityChart.destroy(); priorityChart=null; }
+  if(gradeChart){ gradeChart.destroy(); gradeChart=null; }
+  document.querySelectorAll('.chart-unavailable').forEach(el=>el.remove());
+  ['priorityChart','gradeChart'].forEach(id=>{
+    const c=qs(id);
+    if(c) c.style.display='';
+  });
+}
+function showChartUnavailable(canvas,title,message){
+  if(!canvas) return;
+  const wrap=canvas.parentElement;
+  if(!wrap) return;
+  canvas.style.display='none';
+  let el=wrap.querySelector('.chart-unavailable');
+  if(!el){
+    el=document.createElement('div');
+    el.className='empty chart-unavailable';
+    wrap.appendChild(el);
+  }
+  el.innerHTML=`<strong>${escapeHtml(title)}</strong>${escapeHtml(message)}`;
+}
 function switchPage(name){
+  if(lastPage==='analytics' && name!=='analytics') destroyCharts();
+  lastPage=name;
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
   const page=qs(name+'Page');
@@ -280,8 +350,7 @@ function switchPage(name){
     flashcards:['Flashcards','Create decks and revise important topics.'],
     exams:['Exam Countdown','Monitor upcoming exams and deadlines.'],
     goals:['Goals','Track academic targets and completion progress.'],
-    settings:['Settings','Manage profile and dashboard preferences.'],
-    ai:['AI Assistant','Your personal AI study tutor, planner, and quiz master.']
+    settings:['Settings','Manage profile and dashboard preferences.']
   };
   qs('pageTitle').textContent=map[name][0];
   qs('pageSubtitle').textContent=map[name][1];
@@ -293,12 +362,12 @@ function bindStaticEvents(){
   window.__studyflowBound=true;
   document.querySelectorAll('.nav button').forEach(btn=>btn.onclick=()=>switchPage(btn.dataset.page));
   qs('sidebarNewTaskBtn').onclick=()=>switchPage('tasks');
-  qs('logoutBtn').onclick=()=>openConfirmModal('Logout','Are you sure you want to logout from the dashboard?',()=>{ pauseTimer(); clearAuth(); closeConfirmModal(); renderAuth(); });
-  qs('resetAllBtn').onclick=()=>openConfirmModal('Reset Data','This will remove current dashboard data and restore the default project state.',()=>{ pauseTimer(); state=clone(defaultState); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(); renderAll(); switchPage('dashboard'); closeConfirmModal(); toast('Data reset successfully'); });
+  qs('logoutBtn').onclick=()=>openConfirmModal('Logout','Are you sure you want to logout from the dashboard?',()=>{ pauseTimer(); flushSave(); clearSplashTimers(); resetAiChats(); clearAuth(); closeConfirmModal(); renderAuth(); });
+  qs('resetAllBtn').onclick=()=>openConfirmModal('Reset Data','This will remove all tasks, notes, exams, and other dashboard data. AI chat history will be cleared. Your API key in Settings is kept.',()=>{ pauseTimer(); const savedApiKey=getOpenRouterApiKey(); state=clone(defaultState); state.settings.openRouterApiKey=savedApiKey; normalizeStateArrays(); syncApiKeyStorage(); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(true); resetAiChats(); renderAll(); switchPage('dashboard'); closeConfirmModal(); toast('Data reset successfully'); });
   qs('exportBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='studyflow-data.json'; a.click(); URL.revokeObjectURL(a.href); };
-  qs('importFile').onchange=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const imported=JSON.parse(reader.result); state=mergeState(defaultState,imported); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(); renderAll(); toast('Data imported'); }catch(err){ toast('Invalid JSON file'); } }; reader.readAsText(file); e.target.value=''; };
+  qs('importFile').onchange=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ try{ const imported=JSON.parse(reader.result); state=mergeState(defaultState,imported); normalizeStateArrays(); syncApiKeyStorage(); calendarCursor=new Date(state.calendarDate || new Date().toISOString()); saveState(true); resetAiChats(); renderAll(); toast('Data imported'); }catch(err){ toast('Invalid JSON file'); } }; reader.readAsText(file); e.target.value=''; };
 
-  qs('addTaskBtn').onclick=()=>{ const title=qs('taskTitle').value.trim(); const desc=qs('taskDesc').value.trim(); const due=qs('taskDue').value; const priority=qs('taskPriority').value; if(!title) return toast('Enter task title'); state.tasks.unshift({id:uid(),title,desc,due,priority,done:false}); qs('taskTitle').value=''; qs('taskDesc').value=''; qs('taskDue').value=''; qs('taskPriority').value='medium'; saveState(); renderAll(); toast('Task added'); };
+  qs('addTaskBtn').onclick=()=>{ const title=qs('taskTitle').value.trim(); const desc=qs('taskDesc').value.trim(); const due=qs('taskDue').value; const priority=qs('taskPriority').value; if(!title) return toast('Enter task title'); state.tasks.unshift({id:uid(),title,desc,due,priority,done:false}); qs('taskTitle').value=''; qs('taskDesc').value=''; qs('taskDue').value=''; qs('taskPriority').value='medium'; saveState(true); renderSections('stats','dashboard','tasks','calendar'); toast('Task added'); };
   qs('taskFilter').onchange=renderTasks; qs('taskSearch').oninput=renderTasks;
   qs('addNoteBtn').onclick=()=>{ addNote(qs('noteTitle').value,qs('noteBody').value); qs('noteTitle').value=''; qs('noteBody').value=''; };
   qs('quickAddNoteBtn').onclick=()=>{ addNote(qs('quickNoteTitle').value,qs('quickNoteBody').value); qs('quickNoteTitle').value=''; qs('quickNoteBody').value=''; };
@@ -308,43 +377,159 @@ function bindStaticEvents(){
   qs('startTimerBtn').onclick=startTimer;
   qs('pauseTimerBtn').onclick=()=>{ pauseTimer(); toast('Timer paused'); };
   qs('resetTimerBtn').onclick=()=>{ resetTimer(); toast('Timer reset'); };
-  document.querySelectorAll('.modeBtn').forEach(btn=>btn.onclick=()=>{ pauseTimer(); document.querySelectorAll('.modeBtn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); state.timerMode=Number(btn.dataset.mode); state.timerSeconds=state.timerMode; state.timerRunning=false; saveState(); renderTimer(); renderStats(); });
-  qs('addGradeBtn').onclick=()=>{ const subject=qs('gradeSubject').value.trim(); const score=Number(qs('gradeScore').value); const credits=Number(qs('gradeCredits').value); if(!subject||Number.isNaN(score)||Number.isNaN(credits)) return toast('Fill all grade fields'); state.grades.unshift({id:uid(),subject,score,credits}); qs('gradeSubject').value=''; qs('gradeScore').value=''; qs('gradeCredits').value=''; saveState(); renderAll(); toast('Grade added'); };
-  qs('addHabitBtn').onclick=()=>{ const name=qs('habitName').value.trim(); const icon=qs('habitIcon').value.trim()||'✅'; const target=Number(qs('habitTarget').value)||1; if(!name) return toast('Enter habit name'); state.habits.unshift({id:uid(),name,icon,target,days:[false,false,false,false,false,false,false]}); qs('habitName').value=''; qs('habitIcon').value=''; qs('habitTarget').value=''; saveState(); renderAll(); toast('Habit added'); };
-  qs('addFlashBtn').onclick=()=>{ const deck=qs('deckName').value.trim(); const question=qs('cardQuestion').value.trim(); const answer=qs('cardAnswer').value.trim(); if(!deck||!question||!answer) return toast('Fill all flashcard fields'); state.flashcards.unshift({id:uid(),deck,question,answer}); state.ui.selectedDeck=deck; state.ui.flashIndex=0; state.ui.flashFlipped=false; qs('deckName').value=''; qs('cardQuestion').value=''; qs('cardAnswer').value=''; saveState(); renderAll(); toast('Flashcard added'); };
+  document.querySelectorAll('.modeBtn').forEach(btn=>btn.onclick=()=>{ pauseTimer(); document.querySelectorAll('.modeBtn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); state.timerMode=Number(btn.dataset.mode); state.timerSeconds=state.timerMode; state.timerRunning=false; saveState(true); renderSections('timer','stats'); });
+  qs('addGradeBtn').onclick=()=>{ const subject=qs('gradeSubject').value.trim(); const score=Number(qs('gradeScore').value); const credits=Number(qs('gradeCredits').value); if(!subject||Number.isNaN(score)||Number.isNaN(credits)) return toast('Fill all grade fields'); state.grades.unshift({id:uid(),subject,score,credits}); qs('gradeSubject').value=''; qs('gradeScore').value=''; qs('gradeCredits').value=''; saveState(true); renderSections('grades','analytics'); if(lastPage==='analytics') renderCharts(); toast('Grade added'); };
+  qs('addHabitBtn').onclick=()=>{ const name=qs('habitName').value.trim(); const icon=qs('habitIcon').value.trim()||'✅'; const target=Number(qs('habitTarget').value)||1; if(!name) return toast('Enter habit name'); state.habits.unshift({id:uid(),name,icon,target,days:[false,false,false,false,false,false,false]}); qs('habitName').value=''; qs('habitIcon').value=''; qs('habitTarget').value=''; saveState(true); renderSections('habits','analytics'); toast('Habit added'); };
+  qs('addFlashBtn').onclick=()=>{ const deck=qs('deckName').value.trim(); const question=qs('cardQuestion').value.trim(); const answer=qs('cardAnswer').value.trim(); if(!deck||!question||!answer) return toast('Fill all flashcard fields'); state.flashcards.unshift({id:uid(),deck,question,answer}); state.ui.selectedDeck=deck; state.ui.flashIndex=0; state.ui.flashFlipped=false; qs('deckName').value=''; qs('cardQuestion').value=''; qs('cardAnswer').value=''; saveState(true); renderSections('flashcards'); toast('Flashcard added'); };
   qs('flipFlashBtn').onclick=()=>{ state.ui.flashFlipped=!state.ui.flashFlipped; renderFlashcards(); };
   qs('prevFlashBtn').onclick=()=>{ const cards=state.flashcards.filter(f=>f.deck===state.ui.selectedDeck); if(!cards.length) return; state.ui.flashIndex=(state.ui.flashIndex-1+cards.length)%cards.length; state.ui.flashFlipped=false; renderFlashcards(); };
   qs('nextFlashBtn').onclick=()=>{ const cards=state.flashcards.filter(f=>f.deck===state.ui.selectedDeck); if(!cards.length) return; state.ui.flashIndex=(state.ui.flashIndex+1)%cards.length; state.ui.flashFlipped=false; renderFlashcards(); };
   qs('flashCard').onclick=()=>qs('flipFlashBtn').click();
-  qs('addExamBtn').onclick=()=>{ const name=qs('examName').value.trim(); const date=qs('examDate').value; const subject=qs('examSubject').value.trim(); if(!name||!date||!subject) return toast('Fill all exam fields'); state.exams.unshift({id:uid(),name,date,subject}); qs('examName').value=''; qs('examDate').value=''; qs('examSubject').value=''; saveState(); renderAll(); toast('Exam added'); };
-  qs('addGoalBtn').onclick=()=>{ const title=qs('goalTitle').value.trim(); const target=Number(qs('goalTarget').value)||100; const progress=Number(qs('goalProgressInput').value)||0; if(!title) return toast('Enter goal title'); state.goals.unshift({id:uid(),title,target,progress}); qs('goalTitle').value=''; qs('goalTarget').value=''; qs('goalProgressInput').value=''; saveState(); renderAll(); toast('Goal added'); };
-  qs('addTtBtn').onclick=()=>{ const name=qs('ttName').value.trim(); const day=qs('ttDay').value; const time=qs('ttTime').value.trim(); const color=qs('ttColor').value; if(!name||!time) return toast('Fill timetable fields'); state.timetable.unshift({id:uid(),name,day,time,color}); qs('ttName').value=''; qs('ttTime').value=''; saveState(); renderAll(); toast('Class added'); };
-  qs('toggleToast').onclick=()=>{ state.settings.toasts=!state.settings.toasts; saveState(); renderSettings(); };
-  qs('toggleAutosave').onclick=()=>{ state.settings.autosave=!state.settings.autosave; saveState(); renderSettings(); };
-  qs('profileName').oninput=e=>{ state.settings.profileName=e.target.value; saveState(); qs('welcomeChip').textContent='Welcome, '+(e.target.value||'Student'); };
+  qs('addExamBtn').onclick=()=>{ const name=qs('examName').value.trim(); const date=qs('examDate').value; const subject=qs('examSubject').value.trim(); if(!name||!date||!subject) return toast('Fill all exam fields'); if(!Array.isArray(state.exams)) state.exams=[]; state.exams.unshift({id:uid(),name,date,subject}); qs('examName').value=''; qs('examDate').value=''; qs('examSubject').value=''; saveState(true); renderSections('stats','dashboard','exams','calendar'); toast('Exam added'); };
+  qs('addGoalBtn').onclick=()=>{ const title=qs('goalTitle').value.trim(); const target=Number(qs('goalTarget').value)||100; const progress=Number(qs('goalProgressInput').value)||0; if(!title) return toast('Enter goal title'); state.goals.unshift({id:uid(),title,target,progress}); qs('goalTitle').value=''; qs('goalTarget').value=''; qs('goalProgressInput').value=''; saveState(true); renderSections('stats','dashboard','goals'); toast('Goal added'); };
+  qs('addTtBtn').onclick=()=>{ const name=qs('ttName').value.trim(); const day=qs('ttDay').value; const time=qs('ttTime').value.trim(); const color=qs('ttColor').value; if(!name||!time) return toast('Fill timetable fields'); state.timetable.unshift({id:uid(),name,day,time,color}); qs('ttName').value=''; qs('ttTime').value=''; saveState(true); renderSections('timetable'); toast('Class added'); };
+  qs('toggleToast').onclick=()=>{ state.settings.toasts=!state.settings.toasts; saveState(true); renderSettings(); };
+  qs('toggleAutosave').onclick=()=>{ state.settings.autosave=!state.settings.autosave; if(state.settings.autosave) saveState(true); renderSettings(); };
+  qs('profileName').oninput=e=>{
+    state.settings.profileName=e.target.value;
+    if(qs('welcomeChip')) qs('welcomeChip').textContent='Welcome, '+(e.target.value||'Student');
+    clearTimeout(profileSaveTimer);
+    profileSaveTimer=setTimeout(()=>saveState(),400);
+  };
   qs('accentColor').oninput=e=>{ state.settings.accent=e.target.value; applyAccentColor(e.target.value); saveState(); };
+  const apiInput=qs('openRouterApiKey');
+  if(apiInput){
+    apiInput.oninput=e=>{
+      state.settings.openRouterApiKey=e.target.value.trim();
+      syncApiKeyStorage();
+      saveState();
+      updateApiKeyStatus();
+    };
+  }
   document.querySelectorAll('.settingsTab').forEach(btn=>btn.onclick=()=>{ document.querySelectorAll('.settingsTab').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); document.querySelectorAll('.settingsPane').forEach(p=>p.classList.add('hide')); qs('settings-'+btn.dataset.tab).classList.remove('hide'); });
+  bindThemeToggles();
+  bindDelegatedEvents();
+  window.addEventListener('beforeunload',()=>{ pauseTimer(); flushSave(); });
+  window.addEventListener('pagehide',()=>{ pauseTimer(); flushSave(); });
+}
+
+function updateThemeToggleUi(){
+  const dark=document.body.classList.contains('dark');
+  const top=qs('themeToggle');
+  if(top) top.textContent=dark?'☀️':'🌙';
+  const settingsBtn=qs('themeToggleSettings');
+  if(settingsBtn) settingsBtn.textContent=dark?'☀️ Light':'🌙 Dark';
+}
+function bindThemeToggles(){
+  document.querySelectorAll('.js-theme-toggle, #themeToggle').forEach(btn=>{
+    if(btn.__themeBound) return;
+    btn.__themeBound=true;
+    btn.onclick=()=>{
+      document.body.classList.toggle('dark');
+      const dark=document.body.classList.contains('dark');
+      localStorage.setItem('theme',dark?'dark':'light');
+      updateThemeToggleUi();
+      if(lastPage==='analytics') renderCharts();
+    };
+  });
+  updateThemeToggleUi();
+}
+
+function bindDelegatedEvents(){
+  if(window.__studyflowDelegated) return;
+  window.__studyflowDelegated=true;
+  const app=qs('appRoot');
+  if(!app) return;
+
+  app.addEventListener('change',e=>{
+    if(e.target.matches('#taskList .check')){
+      const row=e.target.closest('.task[data-id]');
+      if(row) toggleTask(row.dataset.id);
+    }
+  });
+  app.addEventListener('click',e=>{
+    const del=e.target.closest('[data-action="delete"]');
+    if(del){
+      const row=del.closest('.task[data-id],.note[data-id],.grade[data-id],.habit[data-id],.flash[data-id],.exam[data-id],.goal[data-id],.tt-item[data-id]');
+      if(!row?.dataset.id) return;
+      const id=row.dataset.id;
+      if(row.classList.contains('task')) deleteTask(id);
+      else if(row.classList.contains('note')) deleteNote(id);
+      else if(row.classList.contains('grade')) deleteGrade(id);
+      else if(row.classList.contains('habit')) deleteHabit(id);
+      else if(row.classList.contains('flash')) deleteFlash(id);
+      else if(row.classList.contains('exam')) deleteExam(id);
+      else if(row.classList.contains('goal')) deleteGoal(id);
+      else if(row.classList.contains('tt-item')) deleteTt(id);
+      return;
+    }
+    const bump=e.target.closest('[data-action="bump"]');
+    if(bump){
+      const row=bump.closest('.goal[data-id]');
+      if(row) bumpGoal(row.dataset.id,Number(bump.dataset.bump)||10);
+      return;
+    }
+    const wd=e.target.closest('.wd[data-habit][data-day]');
+    if(wd){
+      toggleHabitDay(wd.dataset.habit,Number(wd.dataset.day));
+      return;
+    }
+    const folder=e.target.closest('#deckFolders .folder[data-deck]');
+    if(folder){
+      selectDeck(decodeURIComponent(folder.getAttribute('data-deck')||''));
+    }
+  });
+}
+
+const RENDERERS={
+  stats:()=>renderStats(),
+  dashboard:()=>renderDashboard(),
+  tasks:()=>renderTasks(),
+  notes:()=>renderNotes(),
+  calendar:()=>renderCalendar(),
+  timer:()=>renderTimer(),
+  focusLog:()=>renderFocusLog(),
+  grades:()=>renderGrades(),
+  habits:()=>renderHabits(),
+  flashcards:()=>renderFlashcards(),
+  exams:()=>renderExams(),
+  goals:()=>renderGoals(),
+  timetable:()=>renderTimetable(),
+  analytics:()=>renderAnalytics(),
+  settings:()=>renderSettings()
+};
+function renderSections(...keys){
+  if(!sessionLoggedIn) return;
+  keys.forEach(k=>{
+    try{ RENDERERS[k]?.(); }
+    catch(err){ console.error('StudyFlow render error:',k,err); }
+  });
 }
 
 function renderStats(){
-  const total=state.tasks.length;
-  const done=state.tasks.filter(t=>t.done).length;
-  const notes=state.notes.length;
+  const tasks=Array.isArray(state.tasks)?state.tasks:[];
+  const notes=Array.isArray(state.notes)?state.notes:[];
+  const exams=Array.isArray(state.exams)?state.exams:[];
+  const goals=Array.isArray(state.goals)?state.goals:[];
+  const total=tasks.length;
+  const done=tasks.filter(t=>t.done).length;
   const progress=total?Math.round(done/total*100):0;
-  qs('statTotal').textContent=total;
-  qs('statDone').textContent=done;
-  qs('statNotes').textContent=notes;
-  qs('statProgress').textContent=progress+'%';
-  qs('dashTaskChip').textContent=(total-done)+' pending';
-  qs('todayPendingCount').textContent=total-done;
-  qs('todayExamCount').textContent=state.exams.length;
-  qs('todayGoalCount').textContent=state.goals.filter(g=>g.progress<100).length;
-  qs('focusStatusPill').textContent=state.timerRunning ? 'Focus timer running' : 'Focus timer ready';
-  qs('todayDatePill').textContent=new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'short'});
-  qs('navTaskCount').textContent=total-done;
-  const semester=Math.max(0,Math.min(100,progress+Math.min(40,state.goals.reduce((a,g)=>a+g.progress,0)/(state.goals.length||1)/3)));
-  qs('semesterProgressLabel').textContent=Math.round(semester)+'%';
-  qs('semesterProgressBar').style.width=Math.round(semester)+'%';
+  const set=(id,val)=>{ const el=qs(id); if(el) el.textContent=val; };
+  set('statTotal',total);
+  set('statDone',done);
+  set('statNotes',notes.length);
+  set('statProgress',progress+'%');
+  set('dashTaskChip',(total-done)+' pending');
+  set('todayPendingCount',total-done);
+  set('todayExamCount',exams.length);
+  set('todayGoalCount',goals.filter(g=>g.progress<100).length);
+  set('focusStatusPill',state.timerRunning?'Focus timer running':'Focus timer ready');
+  set('todayDatePill',new Date().toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'short'}));
+  set('navTaskCount',total-done);
+  const semester=Math.max(0,Math.min(100,progress+Math.min(40,goals.reduce((a,g)=>a+(g.progress||0),0)/(goals.length||1)/3)));
+  set('semesterProgressLabel',Math.round(semester)+'%');
+  const bar=qs('semesterProgressBar');
+  if(bar) bar.style.width=Math.round(semester)+'%';
 }
 function renderDashboard(){
   const recent=[...state.tasks].slice(0,5);
@@ -359,141 +544,146 @@ function renderTasks(){
   if(filter==='pending') tasks=tasks.filter(t=>!t.done);
   if(filter==='completed') tasks=tasks.filter(t=>t.done);
   if(filter==='high') tasks=tasks.filter(t=>t.priority==='high');
-  if(q) tasks=tasks.filter(t=>t.title.toLowerCase().includes(q)||t.desc.toLowerCase().includes(q));
-  qs('taskList').innerHTML=!tasks.length ? '<div class="empty"><strong>No tasks found</strong>Try a different filter or add a new task.</div>' : tasks.map(t=>`<div class="task ${t.done?'done':''}"><input class="check" type="checkbox" ${t.done?'checked':''} onchange="toggleTask('${t.id}')"><div><div class="task-title">${escapeHtml(t.title)}</div><div class="task-meta">${escapeHtml(t.desc||'No description')} • Due: ${escapeHtml(formatDate(t.due))} • <span class="pill p-${t.priority}">${t.priority}</span></div></div><div class="task-actions"><button class="icon-btn delete" onclick="deleteTask('${t.id}')">Delete</button></div></div>`).join('');
+  if(q) tasks=tasks.filter(t=>t.title.toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q));
+  qs('taskList').innerHTML=!tasks.length ? '<div class="empty"><strong>No tasks found</strong>Try a different filter or add a new task.</div>' : tasks.map(t=>`<div class="task ${t.done?'done':''}" data-id="${t.id}"><input class="check" type="checkbox" ${t.done?'checked':''}><div><div class="task-title">${escapeHtml(t.title)}</div><div class="task-meta">${escapeHtml(t.desc||'No description')} • Due: ${escapeHtml(formatDate(t.due))} • <span class="pill p-${t.priority}">${t.priority}</span></div></div><div class="task-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('');
 }
-window.toggleTask=id=>{ const t=state.tasks.find(x=>x.id===id); if(!t) return; t.done=!t.done; saveState(); renderAll(); toast(t.done?'Task completed':'Task marked pending'); };
-window.deleteTask=id=>{ state.tasks=state.tasks.filter(t=>t.id!==id); saveState(); renderAll(); toast('Task deleted'); };
-function addNote(title,body){ if(!title.trim()) return toast('Enter note title'); state.notes.unshift({id:uid(),title:title.trim(),body:body.trim(),createdAt:Date.now()}); saveState(); renderAll(); toast('Note saved'); }
-function renderNotes(){ const q=qs('noteSearch').value.trim().toLowerCase(); const notes=state.notes.filter(n=>!q || n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q)); qs('noteList').innerHTML=!notes.length ? '<div class="empty"><strong>No notes found</strong>Create a note or change your search.</div>' : notes.map(n=>`<div class="note"><div class="row between"><div><h3>${escapeHtml(n.title)}</h3><p>${escapeHtml(n.body)}</p><div class="muted" style="margin-top:8px;font-size:12px;">${new Date(n.createdAt).toLocaleString()}</div></div><button class="icon-btn delete" onclick="deleteNote('${n.id}')">Delete</button></div></div>`).join(''); }
-window.deleteNote=id=>{ state.notes=state.notes.filter(n=>n.id!==id); saveState(); renderAll(); toast('Note deleted'); };
-function renderCalendar(){ state.calendarDate=calendarCursor.toISOString(); saveState(); qs('monthLabel').textContent=calendarCursor.toLocaleDateString(undefined,{month:'long',year:'numeric'}); const names=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const first=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1); const last=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,0); const startDay=first.getDay(); const totalCells=Math.ceil((startDay+last.getDate())/7)*7; let html=names.map(n=>`<div class="dayhead">${n}</div>`).join(''); for(let i=0;i<totalCells;i++){ const dayNum=i-startDay+1; if(dayNum<1||dayNum>last.getDate()){ html+='<div class="day"></div>'; continue; } const d=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),dayNum); const key=d.toISOString().slice(0,10); const count=state.tasks.filter(t=>t.due===key).length+state.exams.filter(e=>e.date===key).length; const isToday=key===new Date().toISOString().slice(0,10); html+=`<div class="day ${isToday?'today':''}">${dayNum}${count?`<span class="count">${count} item${count>1?'s':''}</span>`:''}</div>`; } qs('calendarGrid').innerHTML=html; }
-function renderTimer(){ const m=String(Math.floor(state.timerSeconds/60)).padStart(2,'0'); const s=String(state.timerSeconds%60).padStart(2,'0'); qs('timerDisplay').textContent=`${m}:${s}`; document.querySelectorAll('.modeBtn').forEach(btn=>btn.classList.toggle('active',Number(btn.dataset.mode)===state.timerMode)); }
-function startTimer(){ if(timerInterval) return; state.timerRunning=true; saveState(); renderStats(); timerInterval=setInterval(()=>{ if(state.timerSeconds>0){ state.timerSeconds--; renderTimer(); saveState(); } else { clearInterval(timerInterval); timerInterval=null; state.timerRunning=false; state.focusSessions.unshift({id:uid(),at:Date.now(),mode:state.timerMode}); state.timerSeconds=state.timerMode; saveState(); renderTimer(); renderFocusLog(); renderStats(); toast('Focus session complete'); } },1000); }
-function pauseTimer(){ clearInterval(timerInterval); timerInterval=null; state.timerRunning=false; saveState(); renderStats(); }
-function resetTimer(){ pauseTimer(); state.timerSeconds=state.timerMode; saveState(); renderTimer(); }
-function renderFocusLog(){ qs('focusLog').innerHTML=state.focusSessions.length ? state.focusSessions.slice(0,8).map(s=>`<div class="note"><div><h3>${s.mode===1500?'Focus':s.mode===300?'Short Break':'Long Break'}</h3><p>${new Date(s.at).toLocaleString()}</p></div></div>`).join('') : '<div class="empty"><strong>No sessions completed</strong>Your completed focus sessions will appear here.</div>'; }
-function renderGrades(){ qs('gradeList').innerHTML=state.grades.length ? state.grades.map(g=>`<div class="grade"><div><div class="item-title">${escapeHtml(g.subject)}</div><div class="item-meta">Score: ${g.score} • Credits: ${g.credits}</div></div><div><span class="pill ${g.score>=80?'p-low':g.score>=60?'p-medium':'p-high'}">${g.score}</span></div><div class="item-actions"><button class="icon-btn delete" onclick="deleteGrade('${g.id}')">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No grades added</strong>Add subject scores to see your summary.</div>'; const avg=state.grades.length?(state.grades.reduce((a,b)=>a+b.score,0)/state.grades.length):0; qs('gpaBox').textContent=Math.min(10,avg/10).toFixed(2); }
-window.deleteGrade=id=>{ state.grades=state.grades.filter(g=>g.id!==id); saveState(); renderAll(); toast('Grade deleted'); };
-function renderHabits(){ qs('habitList').innerHTML=state.habits.length ? state.habits.map(h=>`<div class="habit"><div>${escapeHtml(h.icon||'✅')}</div><div><div class="item-title">${escapeHtml(h.name)}</div><div class="item-meta">Target ${h.target}/week</div><div class="week">${['S','M','T','W','T','F','S'].map((d,i)=>`<div class="wd ${h.days[i]?'done':''}" onclick="toggleHabitDay('${h.id}',${i})">${d}</div>`).join('')}</div></div><div class="item-actions"><button class="icon-btn delete" onclick="deleteHabit('${h.id}')">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No habits added</strong>Create a habit to begin tracking consistency.</div>'; }
-window.toggleHabitDay=(id,i)=>{ const h=state.habits.find(x=>x.id===id); if(!h) return; h.days[i]=!h.days[i]; saveState(); renderAll(); };
-window.deleteHabit=id=>{ state.habits=state.habits.filter(h=>h.id!==id); saveState(); renderAll(); toast('Habit deleted'); };
-function renderFlashcards(){ const decks=[...new Set(state.flashcards.map(f=>f.deck))]; qs('deckFolders').innerHTML=decks.map(d=>`<div class="folder ${state.ui.selectedDeck===d?'active':''}" data-deck="${escapeHtml(d)}" onclick="selectDeck(this.dataset.deck)">${escapeHtml(d)}</div>`).join(''); const cards=state.flashcards.filter(f=>f.deck===state.ui.selectedDeck); qs('flashCount').textContent=cards.length+' cards'; if(!cards.length){ qs('flashCard').textContent='No cards in this deck'; qs('flashList').innerHTML='<div class="empty"><strong>No flashcards found</strong>Create cards to begin studying this deck.</div>'; return; } if(state.ui.flashIndex>=cards.length) state.ui.flashIndex=0; const c=cards[state.ui.flashIndex]; qs('flashCard').textContent=state.ui.flashFlipped ? c.answer : c.question; qs('flashList').innerHTML=cards.map(c=>`<div class="flash"><div><div class="item-title">${escapeHtml(c.question)}</div><div class="item-meta">${escapeHtml(c.answer)}</div></div><div><span class="pill p-purple">${escapeHtml(c.deck)}</span></div><div class="item-actions"><button class="icon-btn delete" onclick="deleteFlash('${c.id}')">Delete</button></div></div>`).join(''); }
-window.selectDeck=deck=>{ state.ui.selectedDeck=deck; state.ui.flashIndex=0; state.ui.flashFlipped=false; saveState(); renderFlashcards(); };
-window.deleteFlash=id=>{ state.flashcards=state.flashcards.filter(f=>f.id!==id); const decks=[...new Set(state.flashcards.map(f=>f.deck))]; if(!decks.includes(state.ui.selectedDeck)) state.ui.selectedDeck=decks[0] || ''; state.ui.flashIndex=0; state.ui.flashFlipped=false; saveState(); renderAll(); toast('Card deleted'); };
-function renderExams(){ const exams=[...state.exams].sort((a,b)=>daysLeft(a.date)-daysLeft(b.date)); qs('examList').innerHTML=exams.length ? exams.map(e=>`<div class="exam"><div><div class="item-title">${escapeHtml(e.name)}</div><div class="item-meta">${escapeHtml(e.subject)} • ${formatDate(e.date)}</div></div><div class="countdown">${daysLeft(e.date)} <span>days left</span></div></div><div class="item-actions"><button class="icon-btn delete" onclick="deleteExam('${e.id}')">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No exams added</strong>Add an exam to see countdown details.</div>'; }
-window.deleteExam=id=>{ state.exams=state.exams.filter(e=>e.id!==id); saveState(); renderAll(); toast('Exam deleted'); };
-function renderGoals(){ qs('goalList').innerHTML=state.goals.length ? state.goals.map(g=>`<div class="goal"><div><div class="item-title">${escapeHtml(g.title)}</div><div class="item-meta">Target ${g.target}% • Current ${g.progress}%</div><div class="bar" style="margin-top:10px"><span style="width:${Math.min(100,g.progress)}%"></span></div></div><div><span class="pill p-blue">${g.progress}%</span></div><div class="item-actions"><button class="icon-btn" onclick="bumpGoal('${g.id}',10)">+10</button><button class="icon-btn delete" onclick="deleteGoal('${g.id}')">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No goals added</strong>Create a goal to track your target progress.</div>'; }
-window.bumpGoal=(id,val)=>{ const g=state.goals.find(x=>x.id===id); if(!g) return; g.progress=Math.min(100,g.progress+val); saveState(); renderAll(); };
-window.deleteGoal=id=>{ state.goals=state.goals.filter(g=>g.id!==id); saveState(); renderAll(); toast('Goal deleted'); };
-function renderTimetable(){ const days=['Mon','Tue','Wed','Thu','Fri','Sat']; let html='<div class="tt-head">Time</div>'+days.map(d=>`<div class="tt-head">${d}</div>`).join(''); const times=['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00']; times.forEach(t=>{ html+=`<div class="tt-time">${t}</div>`; days.forEach(d=>{ const item=state.timetable.find(x=>x.day===d && getTimeStartLabel(x.time)===t); html+=`<div class="tt-cell">${item?`<div class="tt-class" style="background:${item.color}">${escapeHtml(item.name)}<br>${escapeHtml(item.time)}</div>`:''}</div>`; }); }); qs('ttBoard').innerHTML=html; qs('ttList').innerHTML=state.timetable.length ? state.timetable.map(t=>`<div class="tt-item"><div><div class="item-title">${escapeHtml(t.name)}</div><div class="item-meta">${t.day} • ${escapeHtml(t.time)}</div></div><div><span style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${t.color}"></span></div><div class="item-actions"><button class="icon-btn delete" onclick="deleteTt('${t.id}')">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No timetable entries</strong>Add classes to build your weekly timetable.</div>'; }
-window.deleteTt=id=>{ state.timetable=state.timetable.filter(t=>t.id!==id); saveState(); renderAll(); toast('Class removed'); };
-function renderAnalytics(){ const total=state.tasks.length; const done=state.tasks.filter(t=>t.done).length; qs('completionRate').textContent=(total?Math.round(done/total*100):0)+'%'; qs('habitRate').textContent=state.habits.reduce((a,h)=>a+h.days.filter(Boolean).length,0); const avg=state.grades.length?(state.grades.reduce((a,b)=>a+b.score,0)/state.grades.length):0; qs('avgGrade').textContent=avg.toFixed(1); qs('goalRate').textContent=state.goals.filter(g=>g.progress>=100).length; }
-function renderCharts(){ renderAnalytics(); const pctx=qs('priorityChart'); const gctx=qs('gradeChart'); if(!pctx || !gctx) return; if(typeof Chart==='undefined'){ pctx.outerHTML='<div class="empty"><strong>Charts unavailable</strong>Chart library could not load in this browser session.</div>'; gctx.outerHTML='<div class="empty"><strong>Charts unavailable</strong>Reload once with internet access to display analytics charts.</div>'; return; } if(priorityChart) priorityChart.destroy(); if(gradeChart) gradeChart.destroy(); priorityChart=new Chart(pctx,{type:'doughnut',data:{labels:['Low','Medium','High'],datasets:[{data:['low','medium','high'].map(p=>state.tasks.filter(t=>t.priority===p).length)}]},options:{plugins:{legend:{position:'bottom'}}}}); gradeChart=new Chart(gctx,{type:'bar',data:{labels:state.grades.map(g=>g.subject),datasets:[{label:'Score',data:state.grades.map(g=>g.score)}]},options:{scales:{y:{beginAtZero:true,max:100}},plugins:{legend:{display:false}}}}); }
-function renderSettings(){ qs('toggleToast').classList.toggle('on',state.settings.toasts); qs('toggleAutosave').classList.toggle('on',state.settings.autosave); qs('profileName').value=state.settings.profileName||''; qs('accentColor').value=state.settings.accent||'#2563eb'; applyAccentColor(state.settings.accent||'#2563eb'); qs('welcomeChip').textContent='Welcome, '+(state.settings.profileName || loadAuth()?.name || 'Student'); }
-function renderAll(){ if(!loadAuth()?.loggedIn) return; renderStats(); renderDashboard(); renderTasks(); renderNotes(); renderCalendar(); renderTimer(); renderFocusLog(); renderGrades(); renderHabits(); renderFlashcards(); renderExams(); renderGoals(); renderTimetable(); renderAnalytics(); renderSettings(); }
-
-// ═══════════════════════════════
-// AI MODE
-// ═══════════════════════════════
-const AI_MODES = {
-  tutor: {
-    label: 'Study Tutor',
-    desc: 'Explain any concept clearly',
-    system: `You are an expert study tutor helping a student. You explain concepts clearly with examples, break down complex ideas, and check understanding. You are encouraging and patient. Keep responses focused and well-structured. Use markdown formatting with **bold** for key terms. When appropriate, use bullet points or numbered lists for clarity.`,
-    prompts: ['Explain this concept to me', 'Give me an example', 'Why is this important?', 'Summarize my notes']
-  },
-  planner: {
-    label: 'Study Planner',
-    desc: 'Build a personalized study schedule',
-    system: `You are a study planning expert. Help the student build an effective, realistic study schedule. Consider their exams, tasks, and goals. Suggest time-blocking techniques, prioritization, and breaks. Be specific and actionable.`,
-    prompts: ['Make me a study schedule', 'How should I prioritize?', 'Plan my exam week', 'Best study techniques']
-  },
-  quiz: {
-    label: 'Quiz Mode',
-    desc: 'Test your knowledge interactively',
-    system: `You are a quiz master. Generate thoughtful, educational questions on any topic the student mentions. After they answer, give detailed feedback — praise correct answers, gently correct mistakes, and always explain the reasoning. Make it engaging and educational.`,
-    prompts: ['Quiz me on this topic', '5 MCQs on Newton\'s laws', 'Test my DBMS knowledge', 'Hard questions on history']
-  },
-  essay: {
-    label: 'Essay Helper',
-    desc: 'Write and improve essays',
-    system: `You are an expert writing coach. Help students brainstorm, outline, draft, and revise essays and academic writing. Provide constructive feedback, suggest improvements in structure, clarity, and argumentation. Be specific in your suggestions.`,
-    prompts: ['Outline this essay topic', 'Improve my introduction', 'Check my argument', 'Suggest a thesis statement']
-  },
-  flashgen: {
-    label: 'Flashcard Generator',
-    desc: 'Generate Q&A flashcards from any topic',
-    system: `You are a flashcard generation expert. When given a topic or notes, generate clear, concise question-and-answer pairs perfect for spaced repetition study. Format each card as:\nQ: [question]\nA: [answer]\n\nMake questions specific and testable. Aim for 5-10 cards unless otherwise asked.`,
-    prompts: ['Generate cards on photosynthesis', 'Flashcards for SQL joins', '10 cards on WW2 causes', 'Cards from these notes']
-  },
-  coach: {
-    label: 'Motivation Coach',
-    desc: 'Stay focused and beat procrastination',
-    system: `You are an empathetic, energizing motivation coach for students. Help them overcome procrastination, manage study anxiety, build better habits, and stay consistent. Be warm, practical, and positive. Give specific actionable advice, not generic platitudes.`,
-    prompts: ["I can't focus today", "Help me stop procrastinating", 'Build a study habit', "I'm stressed about exams"]
+function toggleTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t) return; t.done=!t.done; saveState(); renderSections('stats','dashboard','tasks'); toast(t.done?'Task completed':'Task marked pending'); }
+window.toggleTask=toggleTask;
+function deleteTask(id){ state.tasks=state.tasks.filter(t=>t.id!==id); saveState(); renderSections('stats','dashboard','tasks','calendar'); toast('Task deleted'); }
+window.deleteTask=deleteTask;
+function addNote(title,body){ if(!title.trim()) return toast('Enter note title'); state.notes.unshift({id:uid(),title:title.trim(),body:body.trim(),createdAt:Date.now()}); saveState(true); renderSections('stats','notes'); toast('Note saved'); }
+function renderNotes(){ const q=qs('noteSearch').value.trim().toLowerCase(); const notes=state.notes.filter(n=>!q || n.title.toLowerCase().includes(q) || (n.body||'').toLowerCase().includes(q)); qs('noteList').innerHTML=!notes.length ? '<div class="empty"><strong>No notes found</strong>Create a note or change your search.</div>' : notes.map(n=>`<div class="note" data-id="${n.id}"><div class="row between"><div><h3>${escapeHtml(n.title)}</h3><p>${escapeHtml(n.body)}</p><div class="muted" style="margin-top:8px;font-size:12px;">${new Date(n.createdAt).toLocaleString()}</div></div><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join(''); }
+function deleteNote(id){ state.notes=state.notes.filter(n=>n.id!==id); saveState(); renderSections('stats','notes'); toast('Note deleted'); }
+window.deleteNote=deleteNote;
+function renderCalendar(){
+  state.calendarDate=calendarCursor.toISOString();
+  scheduleSave();
+  qs('monthLabel').textContent=calendarCursor.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const names=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const first=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),1);
+  const last=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth()+1,0);
+  const startDay=first.getDay();
+  const totalCells=Math.ceil((startDay+last.getDate())/7)*7;
+  const todayKey=localDateKey(new Date());
+  let html=names.map(n=>`<div class="dayhead">${n}</div>`).join('');
+  for(let i=0;i<totalCells;i++){
+    const dayNum=i-startDay+1;
+    if(dayNum<1||dayNum>last.getDate()){ html+='<div class="day"></div>'; continue; }
+    const d=new Date(calendarCursor.getFullYear(),calendarCursor.getMonth(),dayNum);
+    const key=localDateKey(d);
+    const count=state.tasks.filter(t=>t.due===key).length+state.exams.filter(e=>e.date===key).length;
+    const isToday=key===todayKey;
+    html+=`<div class="day ${isToday?'today':''}">${dayNum}${count?`<span class="count">${count} item${count>1?'s':''}</span>`:''}</div>`;
   }
-};
-
-let aiMode = 'tutor';
-let aiHistory = [];
-let aiIsTyping = false;
-
-window.setAiMode = function(mode, el) {
-  aiMode = mode;
-  document.querySelectorAll('.ai-mode-card').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  const m = AI_MODES[mode];
-  qs('aiModeLabel').textContent = m.label;
-  qs('aiModeDesc').textContent = m.desc;
-  renderAiQuickPrompts();
-};
-
-function renderAiQuickPrompts() {
-  const m = AI_MODES[aiMode];
-  qs('aiQuickPrompts').innerHTML = m.prompts.map(p =>
-    `<button class="ai-quick-btn" onclick="useQuickPrompt(this.textContent)">${p}</button>`
-  ).join('');
+  qs('calendarGrid').innerHTML=html;
 }
-
-window.useQuickPrompt = function(text) {
-  qs('aiInput').value = text;
-  sendAiMessage();
-};
-
-function getStudentContext() {
-  const pending = state.tasks.filter(t=>!t.done).length;
-  const examsArr = state.exams.map(e=>`${e.name} (${e.subject}, ${daysLeft(e.date)})`).join(', ');
-  const avg = state.grades.length ? (state.grades.reduce((a,b)=>a+b.score,0)/state.grades.length).toFixed(1) : 'N/A';
-  return `\n\n[Student context: ${pending} pending tasks, exams: ${examsArr||'none'}, avg grade: ${avg}]`;
+function renderTimer(){ const m=String(Math.floor(state.timerSeconds/60)).padStart(2,'0'); const s=String(state.timerSeconds%60).padStart(2,'0'); qs('timerDisplay').textContent=`${m}:${s}`; document.querySelectorAll('.modeBtn').forEach(btn=>btn.classList.toggle('active',Number(btn.dataset.mode)===state.timerMode)); }
+function startTimer(){ if(timerInterval) return; state.timerRunning=true; saveState(true); renderSections('stats'); timerInterval=setInterval(()=>{ if(state.timerSeconds>0){ state.timerSeconds--; renderTimer(); renderSections('stats'); } else { clearInterval(timerInterval); timerInterval=null; state.timerRunning=false; state.focusSessions.unshift({id:uid(),at:Date.now(),mode:state.timerMode}); state.timerSeconds=state.timerMode; saveState(true); renderSections('timer','focusLog','stats'); toast('Focus session complete'); } },1000); }
+function pauseTimer(){ clearInterval(timerInterval); timerInterval=null; state.timerRunning=false; saveState(true); renderSections('stats'); }
+function resetTimer(){ pauseTimer(); state.timerSeconds=state.timerMode; saveState(true); renderSections('timer'); }
+function renderFocusLog(){ qs('focusLog').innerHTML=state.focusSessions.length ? state.focusSessions.slice(0,8).map(s=>`<div class="note"><div><h3>${s.mode===1500?'Focus':s.mode===300?'Short Break':'Long Break'}</h3><p>${new Date(s.at).toLocaleString()}</p></div></div>`).join('') : '<div class="empty"><strong>No sessions completed</strong>Your completed focus sessions will appear here.</div>'; }
+function renderGrades(){ qs('gradeList').innerHTML=state.grades.length ? state.grades.map(g=>`<div class="grade" data-id="${g.id}"><div><div class="item-title">${escapeHtml(g.subject)}</div><div class="item-meta">Score: ${g.score} • Credits: ${g.credits}</div></div><div><span class="pill ${g.score>=80?'p-low':g.score>=60?'p-medium':'p-high'}">${g.score}</span></div><div class="item-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No grades added</strong>Add subject scores to see your summary.</div>'; const avg=state.grades.length?(state.grades.reduce((a,b)=>a+b.score,0)/state.grades.length):0; qs('gpaBox').textContent=Math.min(10,avg/10).toFixed(2); }
+function deleteGrade(id){ state.grades=state.grades.filter(g=>g.id!==id); saveState(); renderSections('grades','analytics'); if(lastPage==='analytics') renderCharts(); toast('Grade deleted'); }
+window.deleteGrade=deleteGrade;
+function renderHabits(){ qs('habitList').innerHTML=state.habits.length ? state.habits.map(h=>`<div class="habit" data-id="${h.id}"><div>${escapeHtml(h.icon||'✅')}</div><div><div class="item-title">${escapeHtml(h.name)}</div><div class="item-meta">Target ${h.target}/week</div><div class="week">${['S','M','T','W','T','F','S'].map((d,i)=>`<div class="wd ${h.days[i]?'done':''}" data-habit="${h.id}" data-day="${i}" role="button" tabindex="0">${d}</div>`).join('')}</div></div><div class="item-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No habits added</strong>Create a habit to begin tracking consistency.</div>'; }
+function toggleHabitDay(id,i){ const h=state.habits.find(x=>x.id===id); if(!h) return; h.days[i]=!h.days[i]; saveState(); renderSections('habits','analytics'); }
+window.toggleHabitDay=toggleHabitDay;
+function deleteHabit(id){ state.habits=state.habits.filter(h=>h.id!==id); saveState(); renderSections('habits','analytics'); toast('Habit deleted'); }
+window.deleteHabit=deleteHabit;
+function renderFlashcards(){ const decks=[...new Set(state.flashcards.map(f=>f.deck))]; qs('deckFolders').innerHTML=decks.map(d=>`<div class="folder ${state.ui.selectedDeck===d?'active':''}" data-deck="${encodeURIComponent(d)}">${escapeHtml(d)}</div>`).join(''); const cards=state.flashcards.filter(f=>f.deck===state.ui.selectedDeck); qs('flashCount').textContent=cards.length+' cards'; if(!cards.length){ qs('flashCard').textContent='No cards in this deck'; qs('flashList').innerHTML='<div class="empty"><strong>No flashcards found</strong>Create cards to begin studying this deck.</div>'; return; } if(state.ui.flashIndex>=cards.length) state.ui.flashIndex=0; const c=cards[state.ui.flashIndex]; qs('flashCard').textContent=state.ui.flashFlipped ? c.answer : c.question; qs('flashList').innerHTML=cards.map(c=>`<div class="flash" data-id="${c.id}"><div><div class="item-title">${escapeHtml(c.question)}</div><div class="item-meta">${escapeHtml(c.answer)}</div></div><div><span class="pill p-purple">${escapeHtml(c.deck)}</span></div><div class="item-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join(''); }
+function selectDeck(deck){ state.ui.selectedDeck=deck; state.ui.flashIndex=0; state.ui.flashFlipped=false; saveState(); renderSections('flashcards'); }
+window.selectDeck=selectDeck;
+function deleteFlash(id){ state.flashcards=state.flashcards.filter(f=>f.id!==id); const decks=[...new Set(state.flashcards.map(f=>f.deck))]; if(!decks.includes(state.ui.selectedDeck)) state.ui.selectedDeck=decks[0] || ''; state.ui.flashIndex=0; state.ui.flashFlipped=false; saveState(); renderSections('flashcards'); toast('Card deleted'); }
+window.deleteFlash=deleteFlash;
+function renderExams(){
+  const el=qs('examList');
+  if(!el) return;
+  const exams=[...state.exams].sort((a,b)=>daysLeft(a.date)-daysLeft(b.date));
+  el.innerHTML=exams.length ? exams.map(e=>`<div class="exam" data-id="${e.id}"><div><div class="item-title">${escapeHtml(e.name)}</div><div class="item-meta">${escapeHtml(e.subject)} • ${formatDate(e.date)}</div></div><div class="countdown">${daysLeft(e.date)} <span>days left</span></div><div class="item-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No exams added</strong>Add an exam to see countdown details.</div>';
 }
-
-function renderAiMessage(role, html) {
-  const welcome = qs('aiWelcome');
-  if (welcome) welcome.remove();
-  const wrap = qs('aiMessages');
-  const div = document.createElement('div');
-  div.className = `ai-msg ${role}`;
-  div.innerHTML = `<div class="ai-msg-avatar">${role==='ai'?'✦':'👤'}</div><div class="ai-msg-bubble">${html}</div>`;
-  wrap.appendChild(div);
-  wrap.scrollTop = wrap.scrollHeight;
+function deleteExam(id){ state.exams=state.exams.filter(e=>e.id!==id); saveState(); renderSections('stats','dashboard','exams','calendar'); toast('Exam deleted'); }
+window.deleteExam=deleteExam;
+function renderGoals(){ qs('goalList').innerHTML=state.goals.length ? state.goals.map(g=>`<div class="goal" data-id="${g.id}"><div><div class="item-title">${escapeHtml(g.title)}</div><div class="item-meta">Target ${g.target}% • Current ${g.progress}%</div><div class="bar" style="margin-top:10px"><span style="width:${Math.min(100,g.progress)}%"></span></div></div><div><span class="pill p-blue">${g.progress}%</span></div><div class="item-actions"><button type="button" class="icon-btn" data-action="bump" data-bump="10">+10</button><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No goals added</strong>Create a goal to track your target progress.</div>'; }
+function bumpGoal(id,val){ const g=state.goals.find(x=>x.id===id); if(!g) return; g.progress=Math.min(100,g.progress+val); saveState(); renderSections('stats','dashboard','goals'); }
+window.bumpGoal=bumpGoal;
+function deleteGoal(id){ state.goals=state.goals.filter(g=>g.id!==id); saveState(); renderSections('stats','dashboard','goals'); toast('Goal deleted'); }
+window.deleteGoal=deleteGoal;
+function renderTimetable(){ const days=['Mon','Tue','Wed','Thu','Fri','Sat']; let html='<div class="tt-head">Time</div>'+days.map(d=>`<div class="tt-head">${d}</div>`).join(''); const times=['8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00']; times.forEach(t=>{ html+=`<div class="tt-time">${t}</div>`; days.forEach(d=>{ const item=state.timetable.find(x=>x.day===d && getTimeStartLabel(x.time)===t); html+=`<div class="tt-cell">${item?`<div class="tt-class" style="background:${item.color}">${escapeHtml(item.name)}<br>${escapeHtml(item.time)}</div>`:''}</div>`; }); }); qs('ttBoard').innerHTML=html; qs('ttList').innerHTML=state.timetable.length ? state.timetable.map(t=>`<div class="tt-item" data-id="${t.id}"><div><div class="item-title">${escapeHtml(t.name)}</div><div class="item-meta">${t.day} • ${escapeHtml(t.time)}</div></div><div><span style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${t.color}"></span></div><div class="item-actions"><button type="button" class="icon-btn delete" data-action="delete">Delete</button></div></div>`).join('') : '<div class="empty"><strong>No timetable entries</strong>Add classes to build your weekly timetable.</div>'; }
+function deleteTt(id){ state.timetable=state.timetable.filter(t=>t.id!==id); saveState(); renderSections('timetable'); toast('Class removed'); }
+window.deleteTt=deleteTt;
+function renderAnalytics(){ const total=state.tasks.length; const done=state.tasks.filter(t=>t.done).length; qs('completionRate').textContent=(total?Math.round(done/total*100):0)+'%'; qs('habitRate').textContent=state.habits.reduce((a,h)=>a+h.days.filter(Boolean).length,0); const avg=state.grades.length?(state.grades.reduce((a,b)=>a+b.score,0)/state.grades.length):0; qs('avgGrade').textContent=avg.toFixed(1); qs('goalRate').textContent=state.goals.filter(g=>g.progress>=100).length; }
+function renderCharts(){
+  renderAnalytics();
+  const pctx=qs('priorityChart');
+  const gctx=qs('gradeChart');
+  if(!pctx || !gctx) return;
+  if(typeof Chart==='undefined'){
+    showChartUnavailable(pctx,'Charts unavailable','Chart library could not load in this browser session.');
+    showChartUnavailable(gctx,'Charts unavailable','Reload once with internet access to display analytics charts.');
+    return;
+  }
+  pctx.style.display='';
+  gctx.style.display='';
+  const accent=state.settings?.accent||'#5e6ad2';
+  const muted=document.body.classList.contains('dark')?'#a1a1aa':'#6b7280';
+  const grid=document.body.classList.contains('dark')?'rgba(255,255,255,0.06)':'rgba(17,24,39,0.06)';
+  const font={family:"Inter, system-ui, sans-serif",size:12};
+  if(priorityChart) priorityChart.destroy();
+  if(gradeChart) gradeChart.destroy();
+  priorityChart=new Chart(pctx,{
+    type:'doughnut',
+    data:{
+      labels:['Low','Medium','High'],
+      datasets:[{
+        data:['low','medium','high'].map(p=>state.tasks.filter(t=>t.priority===p).length),
+        backgroundColor:['#34d399','#fbbf24','#fb7185'],
+        borderWidth:0,
+        hoverOffset:6
+      }]
+    },
+    options:{
+      cutout:'62%',
+      plugins:{
+        legend:{position:'bottom',labels:{color:muted,font,padding:16,usePointStyle:true,pointStyleWidth:8}}
+      }
+    }
+  });
+  gradeChart=new Chart(gctx,{
+    type:'bar',
+    data:{
+      labels:state.grades.map(g=>g.subject),
+      datasets:[{
+        label:'Score',
+        data:state.grades.map(g=>g.score),
+        backgroundColor:accent,
+        borderRadius:8,
+        borderSkipped:false,
+        maxBarThickness:40
+      }]
+    },
+    options:{
+      scales:{
+        x:{grid:{display:false},ticks:{color:muted,font}},
+        y:{beginAtZero:true,max:100,grid:{color:grid},ticks:{color:muted,font}}
+      },
+      plugins:{legend:{display:false}}
+    }
+  });
 }
-
-function showTypingIndicator() {
-  const welcome = qs('aiWelcome');
-  if (welcome) welcome.remove();
-  const wrap = qs('aiMessages');
-  const div = document.createElement('div');
-  div.className = 'ai-msg ai';
-  div.id = 'aiTypingIndicator';
-  div.innerHTML = `<div class="ai-msg-avatar">✦</div><div class="ai-typing"><span></span><span></span><span></span></div>`;
-  wrap.appendChild(div);
-  wrap.scrollTop = wrap.scrollHeight;
+function renderSettings(){
+  qs('toggleToast').classList.toggle('on',state.settings.toasts);
+  qs('toggleAutosave').classList.toggle('on',state.settings.autosave);
+  qs('profileName').value=state.settings.profileName||'';
+  qs('accentColor').value=state.settings.accent||'#2563eb';
+  applyAccentColor(state.settings.accent||'#2563eb');
+  qs('welcomeChip').textContent='Welcome, '+(state.settings.profileName || loadAuth()?.name || 'Student');
+  const apiInput=qs('openRouterApiKey');
+  if(apiInput) apiInput.value=state.settings.openRouterApiKey||'';
+  updateApiKeyStatus();
 }
-
-function removeTypingIndicator() {
-  const el = document.getElementById('aiTypingIndicator');
-  if (el) el.remove();
+function renderAll(){
+  if(!sessionLoggedIn) return;
+  renderSections('stats','dashboard','tasks','notes','calendar','timer','focusLog','grades','habits','flashcards','exams','goals','timetable','analytics','settings');
 }
 
 function mdToHtml(text) {
@@ -513,142 +703,42 @@ function mdToHtml(text) {
     .replace(/^(.+)$/,'<p>$1</p>');
 }
 
-window.sendAiMessage = async function() {
-  const input = qs('aiInput');
-  const text = input.value.trim();
-  if (!text || aiIsTyping) return;
-  input.value = '';
-  input.style.height = '';
-  aiIsTyping = true;
-  qs('aiSendBtn').disabled = true;
-  renderAiMessage('user', mdToHtml(text));
-  aiHistory.push({ role: 'user', content: text });
-  showTypingIndicator();
-  const mode = AI_MODES[aiMode];
-  const systemPrompt = mode.system + (aiMode==='planner'?getStudentContext():'');
-  try {
-    const API_KEY = '';
-
-const resp = await fetch(
-  "https://openrouter.ai/api/v1/chat/completions",
-  {
-    method: "POST",
-
-    headers: {
-      "Authorization": `Bearer ${API_KEY}`,
-      "Content-Type": "application/json"
-    },
-
-    body: JSON.stringify({
-
-      model: "openai/gpt-3.5-turbo",
-
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-
-        {
-          role: "user",
-          content: text
-        }
-      ]
-
-    })
-  }
-);
-
-const data = await resp.json();
-
-console.log(data);
-
-if (!resp.ok) {
-
-  removeTypingIndicator();
-
-  renderAiMessage(
-    'ai',
-    `<p>⚠️ ${data.error?.message || 'AI request failed'}</p>`
-  );
-
-  aiIsTyping = false;
-
-  qs('aiSendBtn').disabled = false;
-
-  return;
+function clearPopupChat(){
+  popupHistory=[];
+  popupTyping=false;
+  const wrap=document.getElementById('popupMessages');
+  if(!wrap) return;
+  wrap.innerHTML=`<div class="popup-welcome" id="popupWelcome"><div style="font-size:28px;margin-bottom:8px;">✦</div><div style="font-weight:600;margin-bottom:4px;">AI Study Assistant</div><div style="font-size:12px;opacity:.7;">Ask me anything about your studies!</div></div>`;
+  const popupSend=document.getElementById('popupSendBtn');
+  if(popupSend) popupSend.disabled=false;
+  const popupInput=document.getElementById('popupAiInput');
+  if(popupInput){ popupInput.value=''; popupInput.style.height=''; }
 }
 
-const reply =
-  data.choices?.[0]?.message?.content ||
-  "No response received.";
-    aiHistory.push({ role: 'assistant', content: reply });
-    removeTypingIndicator();
-    renderAiMessage('ai', mdToHtml(reply));
-  } catch(e) {
-    removeTypingIndicator();
-    renderAiMessage('ai', '<p>⚠️ Connection error. Please check your internet and try again.</p>');
-  }
-  aiIsTyping = false;
-  qs('aiSendBtn').disabled = false;
-  qs('aiInput').focus();
-};
-
-window.clearAiChat = function() {
-  aiHistory = [];
-  qs('aiMessages').innerHTML = `<div class="ai-welcome" id="aiWelcome"><div class="ai-welcome-icon">✦</div><h3>AI Study Assistant</h3><p>Choose a mode on the left, then ask me anything! I can tutor you, build a study plan, quiz you, help with essays, and more.</p></div>`;
-};
-
-window.aiInputKeydown = function(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAiMessage(); }
-};
-
-window.autoResizeAiInput = function(el) {
-  el.style.height = '';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-};
-
-// Init AI prompts on page load
-setTimeout(renderAiQuickPrompts, 100);
-
-renderAuth();
-if(loadAuth()?.loggedIn){ bindStaticEvents(); renderAll(); switchPage('dashboard'); if(state.timerRunning) startTimer(); }
-else { bindStaticEvents(); applyAccentColor(state.settings.accent||'#2563eb'); }
-// DARK MODE
-
-const themeToggle = document.getElementById('themeToggle');
-
-if(localStorage.getItem('theme') === 'dark'){
-
-  document.body.classList.add('dark');
-
-  if(themeToggle){
-    themeToggle.textContent = '☀️';
-  }
-
+function resetAiChats(){
+  popupHistory=[];
+  popupTyping=false;
+  clearPopupChat();
+  const popup=document.getElementById('aiPopup');
+  if(popup) popup.classList.remove('show-ai');
 }
 
-if(themeToggle){
-
-  themeToggle.onclick = () => {
-
-    document.body.classList.toggle('dark');
-
-    if(document.body.classList.contains('dark')){
-
-      localStorage.setItem('theme','dark');
-      themeToggle.textContent = '☀️';
-
-    } else {
-
-      localStorage.setItem('theme','light');
-      themeToggle.textContent = '🌙';
-
-    }
-
-  };
-
+function initStudyFlow(){
+  if(localStorage.getItem('theme')==='dark') document.body.classList.add('dark');
+  renderAuth();
+  bindStaticEvents();
+  updateThemeToggleUi();
+  if(sessionLoggedIn){
+    renderAll();
+    switchPage('dashboard');
+    if(state.timerRunning) startTimer();
+    updateApiKeyStatus();
+  } else {
+    applyAccentColor(state.settings.accent||'#2563eb');
+  }
 }
+initStudyFlow();
+
 /* =========================================
    FLOATING AI POPUP
 ========================================= */
@@ -665,6 +755,8 @@ window.closeAiPopupFn = function() {
   if (aiPopup) {
     aiPopup.classList.remove('show-ai');
   }
+  const apiInput=qs('openRouterApiKey');
+  if(apiInput && document.activeElement===apiInput) apiInput.blur();
 };
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -719,9 +811,17 @@ window.sendPopupMessage = async function() {
   sendBtn.disabled = true;
   popupRenderMsg('user', escapeHtml(text));
   popupHistory.push({ role: 'user', content: text });
+  capHistory(popupHistory);
   popupShowTyping();
 
-  const API_KEY = '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';
+  const API_KEY=getOpenRouterApiKey();
+  if(!API_KEY){
+    popupRemoveTyping();
+    popupRenderMsg('ai','⚠️ No API key — add it in Settings → Integrations');
+    popupTyping=false;
+    sendBtn.disabled=false;
+    return;
+  }
   try {
     const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -744,6 +844,7 @@ window.sendPopupMessage = async function() {
     } else {
       const reply = data.choices?.[0]?.message?.content || 'No response received.';
       popupHistory.push({ role: 'assistant', content: reply });
+      capHistory(popupHistory);
       popupRenderMsg('ai', mdToHtml(reply));
     }
   } catch(e) {
@@ -763,40 +864,3 @@ window.autoResizePopupInput = function(el) {
   el.style.height = '';
   el.style.height = Math.min(el.scrollHeight, 90) + 'px';
 };
-/* ===== SF INTRO ===== */
-function showSFIntro(userName, onDone){
-  const ex = document.getElementById('sfIntroOverlay');
-  if(ex) ex.remove();
-  const o = document.createElement('div');
-  o.id = 'sfIntroOverlay';
- o.innerHTML = `
-    <div id="sfGlow"></div>
-
-    <div id="sfBox">
-        <div id="sfName">
-            STUDYFLOW
-        </div>
-    </div>
-`;
-  document.body.appendChild(o);
-  const d = ms => new Promise(r => setTimeout(r, ms));
-  async function run(){
-    await d(80);
-    document.getElementById('sfIcon').classList.add('on');
-    await d(180);
-    document.getElementById('sfS').classList.add('on');
-    await d(110);
-    document.getElementById('sfF').classList.add('on');
-    await d(280);
-    document.getElementById('sfBar').classList.add('on');
-    await d(380);
-    document.getElementById('sfUser').classList.add('on');
-    await d(600);
-    o.classList.add('sf-out');
-    await d(1800);
-    o.remove();
-    onDone && onDone();
-  }
-  run();
-}
- 
