@@ -5520,3 +5520,144 @@ body:not(.dark) .goal .icon-btn.delete{
         transform:translateY(18px);
     }
 }
+/* =========================
+   DIAGONAL FILL SPLASH
+========================= */
+
+#sfIntroOverlay{
+    position:fixed;
+    inset:0;
+    background:#0f172a;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    z-index:999999;
+    overflow:hidden;
+}
+
+/* TEXT */
+
+#sfName{
+    position:relative;
+
+    font-size:110px;
+    font-weight:900;
+
+    letter-spacing:4px;
+
+    color:transparent;
+
+    -webkit-text-stroke:2px rgba(255,255,255,.25);
+
+    text-transform:uppercase;
+}
+
+/* FILL */
+
+#sfName::before{
+
+    content:"STUDYFLOW";
+
+    position:absolute;
+    inset:0;
+
+    background:
+    linear-gradient(
+        135deg,
+        #60a5fa,
+        #2563eb,
+        #4f46e5
+    );
+
+    background-size:200% 200%;
+
+    -webkit-background-clip:text;
+    background-clip:text;
+
+    color:transparent;
+
+    width:0%;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+    animation:
+        diagonalFill 1.8s ease forwards,
+        glowMove 4s linear infinite;
+}
+
+/* GLOW */
+
+#sfGlow{
+    position:absolute;
+
+    width:420px;
+    height:420px;
+
+    border-radius:999px;
+
+    background:
+    radial-gradient(
+        circle,
+        rgba(37,99,235,.35),
+        transparent 70%
+    );
+
+    filter:blur(70px);
+
+    animation:glowPulse 4s ease-in-out infinite;
+}
+
+/* ANIMATIONS */
+
+@keyframes diagonalFill{
+
+    from{
+        width:0%;
+    }
+
+    to{
+        width:100%;
+    }
+}
+
+@keyframes glowMove{
+
+    0%{
+        background-position:0% 50%;
+    }
+
+    100%{
+        background-position:100% 50%;
+    }
+}
+
+@keyframes glowPulse{
+
+    0%,100%{
+        transform:scale(1);
+        opacity:.7;
+    }
+
+    50%{
+        transform:scale(1.12);
+        opacity:1;
+    }
+}
+
+.sf-out{
+
+    animation:splashOut .8s ease forwards;
+}
+
+@keyframes splashOut{
+
+    to{
+        opacity:0;
+        transform:scale(1.08);
+        filter:blur(10px);
+    }
+}
