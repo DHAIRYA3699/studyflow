@@ -769,16 +769,15 @@ function showSFIntro(userName, onDone){
   if(ex) ex.remove();
   const o = document.createElement('div');
   o.id = 'sfIntroOverlay';
-  o.innerHTML = `
-    <div class="sf-grid"></div>
-    <div class="sf-glow sf-g1"></div>
-    <div class="sf-glow sf-g2"></div>
+ o.innerHTML = `
+    <div id="sfGlow"></div>
+
     <div id="sfBox">
-      <div id="sfIcon">📘</div>
-      <div id="sfName"><span id="sfS">Study</span><span id="sfF">Flow</span></div>
-      <div id="sfBar"></div>
-      <div id="sfUser">Welcome, ${escapeHtml(userName)}</div>
-    </div>`;
+        <div id="sfName">
+            STUDYFLOW
+        </div>
+    </div>
+`;
   document.body.appendChild(o);
   const d = ms => new Promise(r => setTimeout(r, ms));
   async function run(){
@@ -794,7 +793,7 @@ function showSFIntro(userName, onDone){
     document.getElementById('sfUser').classList.add('on');
     await d(600);
     o.classList.add('sf-out');
-    await d(650);
+    await d(1800);
     o.remove();
     onDone && onDone();
   }
