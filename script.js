@@ -158,7 +158,7 @@ function renderAuth(){
       <div class="card auth-panel">
         <div class="auth-card-top">
           <h2 class="auth-title">Student Productivity Dashboard</h2>
-          <p class="auth-subtitle">Sign in to continue to your workspace or use guest access for demonstration.</p>
+          <p class="auth-subtitle">Sign in to continue to your workspace or use guest access for overview</p>
           <div class="auth-switch">
             <button type="button" class="btn small primary authTab active" data-auth="login">Login</button>
             <button type="button" class="btn small ghost authTab" data-auth="signup">Sign Up</button>
@@ -186,12 +186,12 @@ function renderAuth(){
               <div class="input-wrap"><label class="field-label" for="signupPassword">Password</label><input class="input" id="signupPassword" placeholder="Create a password" type="password" /></div>
               <div class="auth-actions">
                 <button type="button" class="btn primary" id="signupBtn" style="width:100%">Create Account</button>
-                <div class="auth-help">Profile information is stored locally in the browser for this project.</div>
+                <div class="auth-help">Create your account to access the application</div>
               </div>
             </div>
             <div class="authPane hidden" id="guestPane">
               <h2>Continue as guest</h2>
-              <p>Quick access mode for project demonstration and evaluation.</p>
+              <p>Quick access mode for testing and experience</p>
               <div class="input-wrap"><label class="field-label" for="guestName">Display name</label><input class="input" id="guestName" placeholder="Enter display name" value="Guest Student" /></div>
               <div class="auth-actions">
                 <button type="button" class="btn primary" id="guestBtn" style="width:100%">Enter Dashboard</button>
