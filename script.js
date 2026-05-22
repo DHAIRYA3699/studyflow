@@ -4,18 +4,17 @@ const authKey='studyflow_auth_rebuilt_v2';
 const defaultState={
   settings:{toasts:true,autosave:true,profileName:'',accent:'#2563eb'},
   tasks:[
-    {id:uid(),title:'Revise DBMS unit 2',desc:'Finish normalization and joins',due:'',priority:'high',done:false},
-    {id:uid(),title:'Complete project report',desc:'Write intro and methodology',due:'',priority:'medium',done:false}
+   
   ],
-  notes:[{id:uid(),title:'Welcome',body:'Use this dashboard to organize tasks, notes, exams, and study progress efficiently.',createdAt:Date.now()}],
+  notes:[],
   calendarDate:new Date().toISOString(),
   timerSeconds:1500,timerRunning:false,timerMode:1500,focusSessions:[],
-  timetable:[{id:uid(),name:'Math',day:'Mon',time:'9:00 - 10:00',color:'#2563eb'}],
-  grades:[{id:uid(),subject:'Math',score:84,credits:4},{id:uid(),subject:'DBMS',score:77,credits:3}],
-  habits:[{id:uid(),name:'Drink Water',icon:'💧',target:5,days:[false,false,false,false,false,false,false]}],
-  flashcards:[{id:uid(),deck:'DBMS',question:'What is normalization?',answer:'Organizing data to reduce redundancy.'}],
-  exams:[{id:uid(),name:'Mid Sem',subject:'OS',date:new Date(Date.now()+7*86400000).toISOString().slice(0,10)}],
-  goals:[{id:uid(),title:'Complete Syllabus',target:100,progress:45}],
+  timetable:[],
+  grades:[],
+  habits:[],
+  flashcards:[],
+  exams:[],
+  goals:[],
   ui:{selectedDeck:'DBMS',flashIndex:0,flashFlipped:false}
 };
 let state=loadState();
