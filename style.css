@@ -5283,3 +5283,37 @@ body.dark .btn.primary{
 .hidden{
     display:none !important;
 }
+/* LIGHT MODE FIX FOR GOALS */
+
+body:not(.dark) .goal{
+    background: #ffffff !important;
+    border: 1px solid #dbe4f0;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.08);
+}
+
+body:not(.dark) .goal .item-title{
+    color:#111827 !important;
+}
+
+body:not(.dark) .goal .item-meta{
+    color:#6b7280 !important;
+}
+
+body:not(.dark) .goal .bar{
+    background:#dbeafe !important;
+}
+
+body:not(.dark) .goal .bar span{
+    background:linear-gradient(90deg,#2563eb,#4f46e5) !important;
+}
+
+body:not(.dark) .goal .icon-btn{
+    background:#eff6ff !important;
+    color:#2563eb !important;
+    border:none;
+}
+
+body:not(.dark) .goal .icon-btn.delete{
+    background:#fee2e2 !important;
+    color:#dc2626 !important;
+}
