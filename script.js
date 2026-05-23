@@ -64,6 +64,13 @@ function capHistory(arr){
   while(arr.length>MAX_CHAT_HISTORY) arr.shift();
 }
 function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
+function isValidEmail(email){
+  const el=document.createElement('input');
+  el.type='email';
+  el.required=true;
+  el.value=email;
+  return el.checkValidity();
+}
 function mergeState(base,incoming){
   const merged=clone(base);
   Object.keys(merged).forEach(key=>{
@@ -158,7 +165,7 @@ function renderAuth(){
       <div class="card auth-panel">
         <div class="auth-card-top">
           <h2 class="auth-title">Student Productivity Dashboard</h2>
-          <p class="auth-subtitle">Sign in to continue to your workspace or use guest access for overview</p>
+          <p class="auth-subtitle">Sign in to continue to your workspace or use guest access for demonstration.</p>
           <div class="auth-switch">
             <button type="button" class="btn small primary authTab active" data-auth="login">Login</button>
             <button type="button" class="btn small ghost authTab" data-auth="signup">Sign Up</button>
@@ -175,7 +182,7 @@ function renderAuth(){
               <div class="input-wrap"><label class="field-label" for="loginPassword">Password</label><input class="input" id="loginPassword" placeholder="Enter your password" type="password" /></div>
               <div class="auth-actions">
                 <button type="button" class="btn primary" id="loginBtn" style="width:100%">Login to Dashboard</button>
-                <div class="auth-help">Use any valid email and password for project demonstration.</div>
+                <div class="auth-help">Sign in with the email and password you used when you signed up.</div>
               </div>
             </div>
             <div class="authPane hidden" id="signupPane">
@@ -186,16 +193,16 @@ function renderAuth(){
               <div class="input-wrap"><label class="field-label" for="signupPassword">Password</label><input class="input" id="signupPassword" placeholder="Create a password" type="password" /></div>
               <div class="auth-actions">
                 <button type="button" class="btn primary" id="signupBtn" style="width:100%">Create Account</button>
-                <div class="auth-help">Create your account to access the application</div>
+                <div class="auth-help">Your name, email, and password are saved on this device only.</div>
               </div>
             </div>
             <div class="authPane hidden" id="guestPane">
               <h2>Continue as guest</h2>
-              <p>Quick access mode for testing and experience</p>
+              <p>Enter a display name and go straight to the dashboard — no account needed.</p>
               <div class="input-wrap"><label class="field-label" for="guestName">Display name</label><input class="input" id="guestName" placeholder="Enter display name" value="Guest Student" /></div>
               <div class="auth-actions">
                 <button type="button" class="btn primary" id="guestBtn" style="width:100%">Enter Dashboard</button>
-                <div class="auth-help">Useful when presenting the interface directly to a teacher or examiner.</div>
+                <div class="auth-help">Handy if you want to try the app before creating an account.</div>
               </div>
             </div>
           </div>
@@ -223,6 +230,9 @@ function renderAuth(){
   if(!email || !password){
     return toast('Enter email and password');
   }
+  if(!isValidEmail(email)){
+    return toast('Enter a valid email address');
+  }
 
   const users = loadUsers();
 
@@ -246,6 +256,9 @@ function renderAuth(){
 
   if(!name || !email || !password){
     return toast('Fill all sign up fields');
+  }
+  if(!isValidEmail(email)){
+    return toast('Enter a valid email address');
   }
 
   const users = loadUsers();
